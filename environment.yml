@@ -1,0 +1,15 @@
+name: pyddrv
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy>=1.24
+  - scipy>=1.10
+  - matplotlib>=3.7
+  - pytest>=7
+  - pip
+  - pip:
+      # JAX compute core (CPU/XLA; the fused certifier kernel). For NVIDIA
+      # GPUs install a CUDA jax wheel instead (see README).
+      - jax>=0.4.30
+      - -e .

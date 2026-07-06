@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use pyddrv in your research, please cite both the software and the paper below."
+title: "pyddrv: Data-Driven Recurrence-based Verification"
+type: software
+authors:
+  - family-names: Mallada
+    given-names: Enrique
+    affiliation: "Johns Hopkins University"
+repository-code: "https://github.com/NetDLab/pyddrv"
+license: BSD-3-Clause
+preferred-citation:
+  type: article
+  title: "Stability Analysis and Data-driven Verification via Recurrent Lyapunov Functions"
+  authors:
+    - family-names: Siegelmann
+      given-names: Roy
+    - family-names: Shen
+      given-names: Yue
+    - family-names: Paganini
+      given-names: Fernando
+    - family-names: Mallada
+      given-names: Enrique
+  url: "https://mallada.ece.jhu.edu/pubs/2025-Preprint-SSPM.pdf"
