@@ -179,6 +179,8 @@ def verify_stability(
     tau: float = 5.0,
     equilibrium=None,
     method: str = "fused",
+    L_method: str = "corners",
+    rho: float = 0.95,
     n_steps: Optional[int] = None,
     delta: float = 0.1,
     max_refine: int = 12,
@@ -228,6 +230,20 @@ def verify_stability(
         ``"fused"`` = Algorithm 1 at fixed horizon tau. ``"ladder"`` =
         per-cube horizon escalation up to ``tau`` (cheaper at matched
         accuracy; horizons ``tau/4, tau/2, tau``).
+    L_method : {"corners", "evt"}
+        How the one-sided Lipschitz constant is estimated when ``L`` is not
+        supplied. ``"corners"`` (default) evaluates the matrix measure at the
+        box corners -- exact only when the Jacobian is affine in the state
+        (the paper's bilinear systems). ``"evt"`` uses the extreme-value
+        (reverse-Weibull) estimator of Knuth et al. over interior samples,
+        returning a high-probability upper bound -- the sound choice for
+        general nonlinear fields, where a corner max can under-estimate the
+        interior supremum. Reported diagnostics live in
+        ``report.lipschitz.evt`` (fitted ``gamma``, KS p-value, ``validated``).
+    rho : float
+        Confidence level for ``L_method="evt"``: the estimated ``L``
+        over-estimates the true constant with probability ``rho`` (default
+        0.95). Higher ``rho`` -> larger, safer ``L`` (more conservative rate).
     delta : float
         Relative sub-optimality target; refinement stops once the certified
         rate is within ``delta`` of the data-driven ceiling.
@@ -258,7 +274,7 @@ def verify_stability(
 
     if L is None:
         est = estimate_L(_rk4_rollout(f), R, eps, d, norm=norm, tau=tau,
-                         jac=jac, f=f)
+                         jac=jac, f=f, L_method=L_method, rho=rho)
         if not np.isfinite(est.L):
             return StabilityReport(
                 alpha=float("-inf"), alpha_upper=float("-inf"),

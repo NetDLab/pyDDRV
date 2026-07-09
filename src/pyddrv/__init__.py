@@ -41,6 +41,11 @@ from .lipschitz import (
     one_sided_lipschitz,
     one_sided_lipschitz_from_data,
 )
+from .lipschitz_evt import (
+    EVTEstimate,
+    evt_one_sided_lipschitz,
+    evt_one_sided_lipschitz_from_data,
+)
 from .verification import (
     estimate_L,
     estimate_L_roa,
@@ -74,6 +79,9 @@ __all__ = [
     "one_sided_lipschitz",
     "one_sided_lipschitz_from_data",
     "derivatives_from_trajectories",
+    "evt_one_sided_lipschitz",
+    "evt_one_sided_lipschitz_from_data",
+    "EVTEstimate",
     # data
     "TrajectorySet",
     "__version__",

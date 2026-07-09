@@ -37,6 +37,9 @@ class LipschitzEstimate:
     R_bar: float        # enlarged box radius over which L is valid
     R_max: float        # worst-case excursion radius (inf-norm)
     discretization_ok: bool
+    method: str = "corners"       # "corners" (exact for affine Jac) | "evt"
+    rho: float = float("nan")     # EVT confidence level (nan when method="corners")
+    evt: object = None            # EVTEstimate diagnostics when method="evt"
 
 
 def boundary_grid(R, n_grid, d):
@@ -75,8 +78,27 @@ def excursion_radius(rollout, points, t_grid) -> float:
     return float(np.max(np.abs(ys)))
 
 
+def _compute_L(f, R_bar, d, norm, jac, L_method, rho, evt_blocks, evt_per_block):
+    """Estimate ``L = sup_{Q_{R_bar}} mu(df/dx)``. ``L_method="corners"`` is the
+    exact box-corner max (correct only for affine Jacobians); ``"evt"`` is the
+    Knuth reverse-Weibull high-probability upper bound over the box (correct for
+    general nonlinear fields). Returns ``(L, evt_estimate_or_None)``."""
+    if L_method == "corners":
+        L = one_sided_lipschitz(f, [0.0] * d, [R_bar] * d, norm=norm,
+                                method="corners", jac=jac)
+        return L, None
+    if L_method == "evt":
+        from ..lipschitz_evt import evt_one_sided_lipschitz
+        est = evt_one_sided_lipschitz(f, [0.0] * d, [R_bar] * d, norm=norm,
+                                      jac=jac, rho=rho, n_blocks=evt_blocks,
+                                      n_per_block=evt_per_block)
+        return est.L, est
+    raise ValueError(f"unknown L_method {L_method!r}; use 'corners' or 'evt'")
+
+
 def estimate_L(rollout, R, eps, d, norm="2", tau=4.0, n_time=400, n_grid=21,
-               slack=0.05, jac=None, f=None, refine_grid=3, n_grid_max=81
+               slack=0.05, jac=None, f=None, refine_grid=3, n_grid_max=81,
+               L_method="corners", rho=0.95, evt_blocks=100, evt_per_block=1000
                ) -> LipschitzEstimate:
     r"""Estimate ``L`` over the reachable box ``Q_{R_bar}`` (paper §IX-B).
 
@@ -131,8 +153,8 @@ def estimate_L(rollout, R, eps, d, norm="2", tau=4.0, n_time=400, n_grid=21,
             # such a huge box overflows; report it as uncertifiable instead.
             return LipschitzEstimate(L=float("inf"), R_bar=float(R_bar),
                                      R_max=float(R_max), discretization_ok=False)
-        L = one_sided_lipschitz(f, [0.0] * d, [R_bar] * d,
-                                norm=norm, method="corners", jac=jac)
+        L, evt_est = _compute_L(f, R_bar, d, norm, jac, L_method, rho,
+                                evt_blocks, evt_per_block)
 
         # pass 2: RENEWAL-TERMINATED discretization check. The h-tube around a
         # sample, ``||phi(t,x_i)||_inf + h e^{tL}``, covers every unsampled
@@ -164,7 +186,10 @@ def estimate_L(rollout, R, eps, d, norm="2", tau=4.0, n_time=400, n_grid=21,
         ng = min(n_grid_max, 2 * ng - 1)                # densify (halve h)
 
     return LipschitzEstimate(L=float(L), R_bar=float(R_bar), R_max=float(R_max),
-                             discretization_ok=bool(discretization_ok))
+                             discretization_ok=bool(discretization_ok),
+                             method=L_method, rho=(rho if L_method == "evt"
+                                                   else float("nan")),
+                             evt=evt_est)
 
 
 def estimate_L_roa(rollout, R, d, norm="2", tau=2.0, n_time=200, n_grid=21,
