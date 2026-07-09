@@ -36,18 +36,15 @@ def main():
     print(f"  raw results -> {OUT}/bilinear2d_stability.npz")
 
     try:
-        import matplotlib.pyplot as plt
+        import matplotlib.pyplot as plt  # noqa: F401
+        from pyddrv.viz import plot_anytime
     except ImportError:
         print("  (matplotlib not installed; skipping figure)")
         return
-    fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(trace[:, 0], trace[:, 1], "o-", label="certified rate (anytime)")
-    ax.axhline(report.alpha_upper, ls="--", color="gray",
-               label=f"data-driven ceiling {report.alpha_upper:.3f}")
-    ax.set_xlabel("wall time [s]"); ax.set_ylabel(r"certified $\alpha$")
+    ax = plot_anytime(report, label="certified rate (anytime)")
     ax.set_title("Bilinear 2D: anytime certified decay rate")
-    ax.legend(); fig.tight_layout()
-    fig.savefig(os.path.join(OUT, "bilinear2d_stability.png"), dpi=150)
+    ax.figure.tight_layout()
+    ax.figure.savefig(os.path.join(OUT, "bilinear2d_stability.png"), dpi=150)
     print(f"  figure -> {OUT}/bilinear2d_stability.png")
 
 

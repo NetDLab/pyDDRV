@@ -39,25 +39,15 @@ def main():
 
     try:
         import matplotlib.pyplot as plt
-        from matplotlib.collections import PatchCollection
-        from matplotlib.patches import Rectangle
+        from pyddrv.viz import plot_roa_2d
     except ImportError:
         print("  (matplotlib not installed; skipping figure)")
         return
-    fig, ax = plt.subplots(figsize=(6, 6))
-    order = np.argsort(-np.asarray(roa.halfs))    # draw big cubes first
-    cs, hs = np.asarray(roa.centers)[order], np.asarray(roa.halfs)[order]
-    patches = [Rectangle((c[0] - h, c[1] - h), 2 * h, 2 * h)
-               for c, h in zip(cs, hs)]
-    col = PatchCollection(patches, cmap="viridis", lw=0)
-    col.set_array(np.log10(2 * hs))
-    ax.add_collection(col)
-    fig.colorbar(col, ax=ax, label=r"$\log_{10}$ cube width")
-    ax.set_xlim(-R, R); ax.set_ylim(-R, R); ax.set_aspect("equal")
+    ax = plot_roa_2d(roa, color_by="width")           # the reusable helper
     ax.set_xlabel(r"$\phi_1$"); ax.set_ylabel(r"$\phi_2$")
     ax.set_title(f"Kuramoto (k={k:g}, n={n}): certified 1-RoA of sync")
-    fig.tight_layout()
-    fig.savefig(os.path.join(OUT, "kuramoto_roa.png"), dpi=150)
+    ax.figure.tight_layout()
+    ax.figure.savefig(os.path.join(OUT, "kuramoto_roa.png"), dpi=150)
     print(f"  figure -> {OUT}/kuramoto_roa.png")
 
 
