@@ -106,8 +106,14 @@ purpose (its `np.sin` field does not JIT-trace), so it also confirms the no-JAX
 path.
 
 **Prefer notebooks?** The same three walkthroughs, step by step with the
-reasoning inline, are in [`examples/notebooks/`](examples/notebooks) — open one
-in Jupyter and "Run All". See that folder's README.
+reasoning inline, are in [`examples/notebooks/`](examples/notebooks). Install the
+`examples` extra (matplotlib + JupyterLab) and open one — see that folder's
+README:
+
+```bash
+pip install "pyddrv[jax,examples] @ git+https://github.com/NetDLab/pyddrv"
+jupyter lab
+```
 
 ---
 

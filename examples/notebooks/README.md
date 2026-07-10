@@ -11,14 +11,22 @@ walks through one use case step by step, with the reasoning inline.
 
 ## Running them
 
+Use a clean Python **3.10+** environment (the macOS system `python3` is often
+3.9 — too old):
+
 ```bash
-pip install "pyddrv[jax,dev] @ git+https://github.com/NetDLab/pyddrv"
-pip install jupyterlab            # if you don't already have it
+python3.12 -m venv pyddrv-env && source pyddrv-env/bin/activate   # any 3.10+
+pip install "pyddrv[jax,examples] @ git+https://github.com/NetDLab/pyddrv"
 jupyter lab                       # then open a notebook and "Run All"
 ```
 
-On a development checkout, make sure `pyddrv` is importable (either
-`pip install -e ".[dev]"`, or launch Jupyter with `PYTHONPATH=$PWD/src`).
+The `examples` extra pulls in matplotlib **and** JupyterLab, so that one line is
+everything you need. Launch `jupyter lab` from inside the activated environment
+so the notebook uses its kernel.
+
+On a development checkout, install from the repo instead
+(`pip install -e ".[jax,examples]"`), or launch Jupyter with
+`PYTHONPATH=$PWD/src`.
 
 The notebooks ship **un-executed** (clean diffs); "Run All" regenerates every
 figure. `01` runs on the pure-NumPy path (no JAX needed); `02` and `03` use the

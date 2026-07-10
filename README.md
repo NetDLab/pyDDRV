@@ -97,8 +97,10 @@ pytest
 ```
 
 Extras: `[jax]` fused CPU kernel (recommended), `[jax-cuda]` NVIDIA GPUs,
-`[torch]` Apple-MPS/CUDA kernel for very large RoA sweeps, `[sos]` the
-model-based sum-of-squares comparison baseline, `[dev]` tests + plotting.
+`[torch]` Apple-MPS/CUDA kernel for very large RoA sweeps, `[viz]` the plotting
+helpers (matplotlib), `[examples]` everything to run the notebooks (matplotlib +
+JupyterLab), `[sos]` the model-based sum-of-squares comparison baseline, `[dev]`
+tests + plotting.
 
 ## Layout
 
