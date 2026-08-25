@@ -126,6 +126,7 @@ tests/             pytest suite
 python examples/pendulum_stability.py     # NumPy field, full pipeline
 python examples/bilinear2d_stability.py   # JAX fast path + anytime trace
 python examples/kuramoto_roa.py           # region of attraction with Trim
+python examples/kuramoto_roa_3d.py        # 3-D RoA, visualized by 2-D slices
 ```
 
 Each script writes its figures and raw results to `examples/output/`. The same

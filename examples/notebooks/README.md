@@ -8,6 +8,7 @@ walks through one use case step by step, with the reasoning inline.
 | [`01_pendulum_stability.ipynb`](01_pendulum_stability.ipynb) | Minimal `verify_stability` pipeline; NumPy fallback; **EVT** Lipschitz estimation for a nonlinear field |
 | [`02_bilinear2d_stability.ipynb`](02_bilinear2d_stability.ipynb) | JAX fast path; analytic Jacobian; the **anytime** certified-rate frontier |
 | [`03_kuramoto_roa.ipynb`](03_kuramoto_roa.ipynb) | `verify_roa`; closed-form `L`; the two-pass **Trim** protocol; RoA cube-map plot |
+| [`04_kuramoto_roa_3d.ipynb`](04_kuramoto_roa_3d.ipynb) | a **3-D** certified region (n = 4 oscillators), visualized by exact 2-D cross-sections with `plot_roa_slice` |
 
 ## Running them
 

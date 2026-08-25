@@ -90,6 +90,7 @@ and writes raw results + a figure to `examples/output/`.
 python examples/pendulum_stability.py     # NumPy field, full pipeline, ~5 s
 python examples/bilinear2d_stability.py   # JAX fast path + anytime trace, ~2 s
 python examples/kuramoto_roa.py           # region of attraction with Trim, ~1–2 min
+python examples/kuramoto_roa_3d.py        # 3-D RoA + 2-D slices, ~1 min
 ```
 
 **Expected output (numbers are stable to a few %; wall times are machine-dependent):**
@@ -99,6 +100,7 @@ python examples/kuramoto_roa.py           # region of attraction with Trim, ~1�
 | `pendulum`     | `alpha >= 0.388` (ceiling 0.484), eq-(38) `True`  | numpy   | damped pendulum, `R=0.8`, `tau=6`; `L` via EVT (nonlinear Jacobian) |
 | `bilinear2d`   | `alpha >= 0.474` (ceiling 0.499), gap 5%          | jax     | paper eq. (39), `eta=0.3`, matches the paper's ~0.47 |
 | `kuramoto_roa` | certified 1-RoA ≈ **82% of Q_π**                  | jax     | the sync basin minus the two splay-corner basins |
+| `kuramoto_roa_3d` | certified 1-RoA ≈ **66% of Q_π** (d = 3, pass 1) | jax  | n = 4 oscillators; visualized via `plot_roa_slice` cross-sections |
 
 If you see certificates in these ballparks, the install is sound and the method
 is doing what the paper claims. `pendulum` runs on the NumPy fallback on
