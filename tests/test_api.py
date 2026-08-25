@@ -58,6 +58,32 @@ def test_verify_stability_numpy_fallback_for_nontraceable_field():
     assert rep.alpha > 0.0
 
 
+def test_probe_backend_numpy_field_never_touches_jit(monkeypatch):
+    # Regression (beta feedback, 2026-08): the old probe attempted jax.jit on
+    # every field and CAUGHT the TracerArrayConversionError for NumPy fields --
+    # correct, but debuggers configured to break on raised exceptions (VS Code)
+    # paused inside the library. A NumPy field must now be classified by its
+    # output type alone, with no jit attempt and no exception raised.
+    jax = pytest.importorskip("jax", reason="probe needs JAX installed")
+    from pyddrv.api import _probe_backend
+
+    def boom(*a, **k):
+        raise AssertionError("jax.jit must not be called for a NumPy field")
+
+    monkeypatch.setattr(jax, "jit", boom)
+    assert _probe_backend(damped_pendulum(), 2, "auto") == "numpy"
+    assert _probe_backend(linear(A_SPIRAL), 2, "auto") == "numpy"
+
+
+def test_probe_backend_jax_field_selected():
+    pytest.importorskip("jax", reason="probe needs JAX installed")
+    from pyddrv.api import _probe_backend
+    from pyddrv.systems.fields_jax import bilinear_2d_jax
+
+    f, _ = bilinear_2d_jax(eta=0.3, seed=0)
+    assert _probe_backend(f, 2, "auto") == "jax"
+
+
 def test_verify_stability_equilibrium_shift():
     x_star = np.array([1.3, -0.4])
 

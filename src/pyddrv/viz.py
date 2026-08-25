@@ -12,9 +12,11 @@ lazily inside each function with a clear message if missing.
 - :func:`plot_anytime` -- the certified-rate-vs-walltime curve of a
   ``StabilityReport`` (needs ``record_trace=True``).
 - :func:`plot_stability_2d` -- the verified box ``Q_R`` over a 2-D phase
-  portrait of the field.
+  portrait of the field, optionally with the certified covering grid.
 - :func:`plot_roa_2d` -- the certified region-of-attraction cube union of a
   ``RoAReport`` (2-D), colored by cube size or split depth.
+- :func:`plot_roa_slice` -- a 2-D slice of a higher-dimensional certified
+  region (``d >= 3``): the cubes intersecting an axis-aligned plane.
 """
 from __future__ import annotations
 
@@ -221,4 +223,78 @@ def plot_roa_2d(report, ax=None, *, color_by="width", cmap="viridis",
     ax.set_aspect("equal")
     ax.set_title(rf"certified $\alpha={report.alpha:g}$ region "
                  rf"({report.volume:.3g} vol)")
+    return ax
+
+
+def plot_roa_slice(report, dims=(0, 1), at=None, ax=None, *, color_by="width",
+                   cmap="viridis", show_box=True):
+    r"""Plot a 2-D axis-aligned slice of a higher-dimensional certified region.
+
+    For a :class:`~pyddrv.RoAReport` with ``d >= 3``, draw the cubes whose
+    interior intersects the plane ``{x_j = at[j] for every j not in dims}``,
+    projected onto the two coordinates ``dims``. This is how the paper's
+    ``d >= 3`` Kuramoto regions are shown: a cube ``Q_h(c)`` appears in the
+    slice iff ``|c_j - at_j| <= h`` on every fixed axis.
+
+    Parameters
+    ----------
+    dims : (int, int)
+        The two state coordinates spanning the slice plane.
+    at : array_like of length d, optional
+        Where to place the slice. Only the entries *outside* ``dims`` are
+        used. Default: the report's equilibrium (a slice through ``x*``).
+    color_by : {"width", "depth"}
+        Cube fill color, as in :func:`plot_roa_2d`.
+
+    Returns the Axes. Note the drawn area is the slice through the certified
+    union -- its 2-D area is *not* the region's volume (see ``report.volume``).
+    """
+    plt = _plt()
+
+    centers = np.asarray(report.centers, dtype=float)
+    halfs = np.asarray(report.halfs, dtype=float)
+    if centers.ndim != 2:
+        raise ValueError(f"centers must be (N, d); got {centers.shape}")
+    d = centers.shape[1]
+    i, j = int(dims[0]), int(dims[1])
+    if not (0 <= i < d and 0 <= j < d and i != j):
+        raise ValueError(f"dims must be two distinct axes in [0, {d}); got {dims}")
+
+    eq = np.asarray(report.equilibrium, dtype=float).reshape(-1)
+    at = eq.copy() if at is None else np.asarray(at, dtype=float).reshape(-1)
+    if at.shape != (d,):
+        raise ValueError(f"at must have length {d}; got shape {at.shape}")
+
+    fixed = [k for k in range(d) if k not in (i, j)]
+    mask = np.ones(len(centers), dtype=bool)
+    for k in fixed:
+        # float32-stored cube coordinates: tolerance so plane-on-face cubes count
+        mask &= np.abs(centers[:, k] - at[k]) <= halfs * (1 + 1e-6)
+    if not mask.any():
+        raise ValueError(
+            f"no certified cube intersects the slice at {at[fixed]} on axes "
+            f"{fixed}; try a slice through the equilibrium (at=None)")
+
+    cs2 = centers[mask][:, (i, j)]
+    hs2 = halfs[mask]
+    if color_by == "width":
+        vals = np.log10(2 * hs2)
+        clabel = r"$\log_{10}$ cube width"
+    elif color_by == "depth":
+        vals = np.asarray(report.depths, dtype=float)[mask]
+        clabel = "split depth"
+    else:
+        raise ValueError(f"color_by must be 'width' or 'depth', got {color_by!r}")
+
+    ax = ax or plt.subplots(figsize=(6, 6))[1]
+    _draw_cubes(ax, cs2, hs2, vals, cmap=cmap, clabel=clabel, edge=False)
+    R = float(report.R)
+    if show_box:
+        ax.set_xlim(eq[i] - R, eq[i] + R)
+        ax.set_ylim(eq[j] - R, eq[j] + R)
+    ax.set_aspect("equal")
+    ax.set_xlabel(f"$x_{{{i + 1}}}$")
+    ax.set_ylabel(f"$x_{{{j + 1}}}$")
+    other = ", ".join(f"$x_{{{k + 1}}}={at[k]:g}$" for k in fixed)
+    ax.set_title(rf"slice of certified $\alpha={report.alpha:g}$ region ({other})")
     return ax

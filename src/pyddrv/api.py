@@ -85,16 +85,37 @@ def _rk4_rollout(f: Callable) -> Callable:
     return rollout
 
 
-def _probe_backend(f: Callable, d: int, backend: str) -> str:
-    """Resolve ``backend="auto"``: use JAX only if ``f`` traces under jit
-    (a field written with plain-NumPy ops does not; it still runs fine on the
-    NumPy kernel)."""
+def _probe_backend(f: Callable, d: int, backend: str, *,
+                   jit_fallback: bool = False) -> str:
+    """Resolve ``backend="auto"``: use JAX only if ``f`` is a JAX field.
+
+    A field written with ``jax.numpy`` ops returns a ``jax.Array`` even for a
+    NumPy input, so we first evaluate ``f`` on a small NumPy batch and check
+    the output type -- **no exception is raised for the common plain-NumPy
+    case** (an earlier version probed by attempting ``jax.jit`` and catching
+    ``TracerArrayConversionError``, which worked but made debuggers configured
+    to break on raised exceptions -- e.g. VS Code -- pause inside the library
+    on the very first example). A field that returned a JAX array is then
+    confirmed to trace under jit.
+
+    ``jit_fallback=True`` (used by :func:`verify_roa`, which has no NumPy
+    kernel) additionally attempts jit on ndarray-returning fields: operator-only
+    NumPy fields such as ``x @ A.T`` trace fine and can still use the fused
+    kernel; ``np.sin``-style fields raise inside the attempt (caught) and
+    resolve to "numpy"."""
     if backend != "auto":
         return backend
     if not _has_jax():
         return "numpy"
+    import jax
+
     try:
-        import jax
+        is_jax = isinstance(f(np.zeros((2, d))), jax.Array)
+    except Exception:
+        return "numpy"
+    if not is_jax and not jit_fallback:
+        return "numpy"                          # plain-NumPy field: no jit try
+    try:
         import jax.numpy as jnp
 
         out = jax.jit(f)(jnp.zeros((2, d)))
@@ -418,7 +439,7 @@ def verify_roa(
     else:
         eq = np.zeros(d)
 
-    backend = _probe_backend(f, d, backend)
+    backend = _probe_backend(f, d, backend, jit_fallback=True)
     if backend == "numpy":
         raise RuntimeError(
             "verify_roa needs the fused JAX kernel (pip install \"pyddrv[jax]\") "

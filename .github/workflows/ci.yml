@@ -7,13 +7,23 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python-version: ["3.10", "3.12"]
         extras: ["dev", "jax,dev"]
-    name: py${{ matrix.python-version }} (${{ matrix.extras }})
+        include:
+          # Windows coverage (beta feedback): NumPy-only and JAX-CPU paths,
+          # on the Python version our first Windows user runs (3.11).
+          - os: windows-latest
+            python-version: "3.11"
+            extras: "dev"
+          - os: windows-latest
+            python-version: "3.11"
+            extras: "jax,dev"
+    name: ${{ matrix.os }} py${{ matrix.python-version }} (${{ matrix.extras }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

@@ -241,8 +241,10 @@ plt.show()   # or ax.figure.savefig("out.png", dpi=150)
 ```
 
 The three `examples/` scripts each use one of these helpers, so they double as
-worked usage. `plot_roa_2d` is 2-D only; for higher-dimensional regions, slice
-to two coordinates before plotting.
+worked usage. `plot_roa_2d` is 2-D only; for a higher-dimensional region use
+`plot_roa_slice(roa, dims=(0, 1), at=...)`, which draws the cubes intersecting
+an axis-aligned 2-D plane (default: through the equilibrium) — the same view
+the paper uses for its `d >= 3` Kuramoto regions.
 
 ## 7. Reading a report
 
@@ -287,9 +289,72 @@ to two coordinates before plotting.
   the SoS parts — they are only the comparison baseline, not the certifier.
 - **GPU.** JAX on Apple Silicon is CPU-only here and is already fast. Real GPU
   speedups come from `[jax-cuda]` on an NVIDIA machine (no code change) or the
-  `[torch]` MPS/CUDA kernel for very large RoA sweeps.
+  `[torch]` MPS/CUDA kernel for very large RoA sweeps. Details in §9.
+- **VS Code (or another debugger) pauses on a JAX `TracerArrayConversionError`.**
+  Versions before 2026-08 probed `backend="auto"` by *attempting* `jax.jit` on
+  your field and catching the failure — correct, but a debugger set to break on
+  raised exceptions pauses on that internal, already-handled exception (the
+  pendulum example's `np.sin` field triggers it by design). Current versions
+  classify plain-NumPy fields without raising anything, so update if you see
+  this. If a debugger still pauses inside library code on a *caught* exception,
+  press Continue, or disable the "Raised Exceptions" breakpoint (VS Code:
+  Run and Debug panel → Breakpoints → uncheck "Raised Exceptions").
 
 ---
+
+## 9. GPUs, Windows, and platforms
+
+**CPU is the default and is genuinely fast.** The fused JAX kernel on CPU
+certifies hundreds of thousands of cubes per second; every number in this
+guide was produced on a laptop CPU. Reach for a GPU only for very large
+region-of-attraction sweeps (high dimension / long budgets).
+
+**NVIDIA GPU (Linux, or Windows via WSL2):**
+
+```bash
+pip install "pyddrv[jax-cuda] @ git+https://github.com/NetDLab/pyddrv"
+python -c "import jax; print(jax.devices())"   # expect [CudaDevice(id=0)]
+```
+
+No code changes — the same field runs on the GPU. JAX does **not** support
+CUDA on native Windows; use WSL2 (Ubuntu) for the CUDA path there.
+
+**Native Windows or Apple-GPU:** use the torch kernel instead — install the
+`[torch]` extra (a CUDA build of torch on Windows, the default build on
+Apple Silicon), write the field with torch ops, and pass `backend="torch"`.
+Check the device with `python -c "import torch; print(torch.cuda.is_available())"`
+(or `torch.backends.mps.is_available()` on a Mac).
+
+**Windows status:** supported. CI runs the full test suite on
+`windows-latest` (Python 3.11, both the NumPy-only and JAX-CPU paths) on
+every push — the Actions tab is the live answer to "does it work on
+Windows". JAX ships CPU wheels for Windows; the NumPy fallback needs nothing
+platform-specific.
+
+## 10. FAQ: choosing `tau` (and what if it's too large?)
+
+`tau` is the recurrence horizon: how long a trajectory may wander before `V`
+must have dipped. What happens as you grow it:
+
+- **The certified rate never gets worse.** The certificate maximizes over
+  return times `t ∈ (0, tau]`, so a larger `tau` only widens the search
+  window. (`L` must be valid over the reachable set for the horizon you use —
+  the built-in estimator handles this, and the excursion radius typically
+  *saturates* once trajectories stop excursing, so `L` stops growing too.)
+- **You pay compute linearly.** Integration steps scale with `tau`
+  (`n_steps` defaults to `50·tau`), and with a fixed time budget an
+  oversized `tau` spends steps on horizons most cubes never need — the boxes
+  that certify in the first tenth of the horizon still integrate all of it.
+- So "too large" wastes time but does not break soundness or degrade the
+  rate. Practical recipe: start with `tau` ≈ a few characteristic periods of
+  the system (our examples use 3–6), check `report.suboptimality`, and only
+  raise `tau` if many cubes sit at negative/`-inf` rates (no return within
+  the horizon). If you want the horizon managed per-cube automatically, use
+  `method="ladder"`: cubes start at `tau/4` and escalate only when they
+  block the rate.
+- **Too small** is the direction that actually costs you: trajectories that
+  have not returned within `tau` certify nothing, so the rate collapses even
+  for stable systems.
 
 ## Where to go next
 

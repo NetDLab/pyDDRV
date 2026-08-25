@@ -13,7 +13,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 from pyddrv.api import RoAReport, StabilityReport  # noqa: E402
-from pyddrv.viz import plot_anytime, plot_roa_2d, plot_stability_2d  # noqa: E402
+from pyddrv.viz import (  # noqa: E402
+    plot_anytime,
+    plot_roa_2d,
+    plot_roa_slice,
+    plot_stability_2d,
+)
 
 
 def _stab_report(trace=True, grid=False):
@@ -91,3 +96,42 @@ def test_plot_roa_2d_width_and_depth():
 def test_plot_roa_2d_rejects_bad_color_by():
     with pytest.raises(ValueError):
         plot_roa_2d(_roa_report(), color_by="nope")
+
+
+def _roa_report_3d():
+    # 3-D region: a 3x3x3 block of unit-ish cubes centered on the origin plane
+    grid = np.linspace(-0.4, 0.4, 3)
+    centers = np.stack(np.meshgrid(grid, grid, grid, indexing="ij"),
+                       -1).reshape(-1, 3)
+    halfs = np.full(len(centers), 0.2)
+    return RoAReport(
+        alpha=1.0, volume=float(np.sum((2 * halfs) ** 3)),
+        n_certified=len(centers), n_tested=len(centers),
+        equilibrium=np.zeros(3), norm="2", R=1.0, eps=0.01, tau=2.0, L=5.0,
+        discretization_ok=True, trim=False, stop_reason="complete",
+        centers=centers, halfs=halfs, depths=np.zeros(len(centers), dtype=int))
+
+
+def test_plot_roa_slice_through_equilibrium():
+    rep = _roa_report_3d()
+    ax = plot_roa_slice(rep, dims=(0, 1))        # slice at x3 = 0
+    # 9 of the 27 cubes contain the x3=0 plane (the x3=0 layer)
+    assert len(ax.collections[0].get_paths()) == 9
+    plt.close(ax.figure)
+
+
+def test_plot_roa_slice_off_plane_and_empty():
+    rep = _roa_report_3d()
+    ax = plot_roa_slice(rep, dims=(0, 2), at=[0.0, 0.35, 0.0])  # x2=0.35 layer
+    assert len(ax.collections[0].get_paths()) == 9
+    plt.close(ax.figure)
+    with pytest.raises(ValueError):              # far outside the region
+        plot_roa_slice(rep, dims=(0, 1), at=[0.0, 0.0, 5.0])
+
+
+def test_plot_roa_slice_validates_dims():
+    rep = _roa_report_3d()
+    with pytest.raises(ValueError):
+        plot_roa_slice(rep, dims=(0, 0))
+    with pytest.raises(ValueError):
+        plot_roa_slice(rep, dims=(0, 5))
