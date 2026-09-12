@@ -200,7 +200,7 @@ def verify_stability(
     tau: float = 5.0,
     equilibrium=None,
     method: str = "fused",
-    L_method: str = "corners",
+    L_method: str = "auto",
     rho: float = 0.95,
     n_steps: Optional[int] = None,
     delta: float = 0.1,
@@ -251,16 +251,18 @@ def verify_stability(
         ``"fused"`` = Algorithm 1 at fixed horizon tau. ``"ladder"`` =
         per-cube horizon escalation up to ``tau`` (cheaper at matched
         accuracy; horizons ``tau/4, tau/2, tau``).
-    L_method : {"corners", "evt"}
+    L_method : {"auto", "corners", "evt"}
         How the one-sided Lipschitz constant is estimated when ``L`` is not
-        supplied. ``"corners"`` (default) evaluates the matrix measure at the
-        box corners -- exact only when the Jacobian is affine in the state
-        (the paper's bilinear systems). ``"evt"`` uses the extreme-value
-        (reverse-Weibull) estimator of Knuth et al. over interior samples,
-        returning a high-probability upper bound -- the sound choice for
-        general nonlinear fields, where a corner max can under-estimate the
-        interior supremum. Reported diagnostics live in
-        ``report.lipschitz.evt`` (fitted ``gamma``, KS p-value, ``validated``).
+        supplied. ``"corners"`` evaluates the matrix measure at the box corners
+        -- exact only when the Jacobian is affine in the state (the paper's
+        bilinear systems), and an UNDER-estimate (unsound) for general
+        nonlinear fields. ``"evt"`` uses the extreme-value (reverse-Weibull)
+        estimator of Knuth et al. over interior samples, a high-probability
+        upper bound that is the sound choice for nonlinear fields. ``"auto"``
+        (default) picks ``"corners"`` only when an analytic ``jac`` is given
+        and passes a sampled affinity test, and ``"evt"`` otherwise. The
+        resolved choice and diagnostics live in ``report.lipschitz``
+        (``.method``, ``.evt`` with fitted ``gamma``, KS p-value, ``validated``).
     rho : float
         Confidence level for ``L_method="evt"``: the estimated ``L``
         over-estimates the true constant with probability ``rho`` (default
@@ -402,6 +404,8 @@ def verify_roa(
     backend: str = "auto",
     spill_dir: Optional[str] = None,
     verbose: bool = False,
+    L_method: str = "auto",
+    rho: float = 0.95,
     **kwargs,
 ) -> RoAReport:
     r"""Grow a certified inner approximation of the region of attraction.
@@ -413,7 +417,8 @@ def verify_roa(
     Requires the fused JAX kernel (or ``backend="torch"`` with a torch
     field); install the ``jax`` extra.
 
-    Parameters largely mirror :func:`verify_stability`. Extra knobs:
+    Parameters largely mirror :func:`verify_stability` (including
+    ``L_method``/``rho`` for the Lipschitz estimate). Extra knobs:
 
     trim : bool
         Run the paper's two-pass protocol: pass 1 grows a tentative region
@@ -449,7 +454,7 @@ def verify_roa(
 
     if L is None:
         est = estimate_L_roa(_rk4_rollout(f), R, d, norm=norm, tau=tau,
-                             jac=jac, f=f)
+                             jac=jac, f=f, L_method=L_method, rho=rho)
         if not np.isfinite(est.L):
             return RoAReport(alpha=float(alpha), volume=0.0, n_certified=0,
                              n_tested=0, equilibrium=eq, norm=norm, R=R,

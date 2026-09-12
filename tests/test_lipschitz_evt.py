@@ -119,3 +119,37 @@ def test_estimate_L_evt_plumbs_through():
     corner = estimate_L(rollout, R=0.7, eps=0.01, d=2, norm="2", tau=3.0,
                         jac=jac, f=f, L_method="corners")
     assert est.L >= corner.L - 1e-6
+
+
+def test_jacobian_affinity_test():
+    from pyddrv.verification.estimate import _jacobian_is_affine
+    _, jac_affine = bilinear_2d(eta=0.3, seed=0)      # J affine in x
+    _, jac_nonaff = _interior_peak_field()              # J has cos(3 x1)
+    assert _jacobian_is_affine(jac_affine, 1.0, 2)
+    assert not _jacobian_is_affine(jac_nonaff, 1.0, 2)
+
+
+def test_estimate_L_auto_resolves_by_affinity():
+    from pyddrv.systems import simulate
+    from pyddrv.verification.estimate import estimate_L
+
+    def rollout_of(f):
+        return lambda pts, t: simulate(f, np.asarray(pts, float),
+                                       float(t[1] - t[0]), len(t))
+
+    # affine analytic Jacobian -> corners (exact), identical to explicit corners
+    f, jac = bilinear_2d(eta=0.3, seed=0)
+    auto = estimate_L(rollout_of(f), R=0.7, eps=0.01, d=2, tau=3.0, jac=jac, f=f)
+    corn = estimate_L(rollout_of(f), R=0.7, eps=0.01, d=2, tau=3.0, jac=jac, f=f,
+                      L_method="corners")
+    assert auto.method == "corners" and auto.evt is None
+    assert auto.L == pytest.approx(corn.L)
+
+    # nonlinear analytic Jacobian -> evt; no Jacobian at all -> evt
+    g, jac_g = _interior_peak_field()
+    with_jac = estimate_L(rollout_of(g), R=0.5, eps=0.01, d=2, tau=2.0, jac=jac_g,
+                          f=g, evt_blocks=30, evt_per_block=500)
+    no_jac = estimate_L(rollout_of(g), R=0.5, eps=0.01, d=2, tau=2.0, f=g,
+                        evt_blocks=30, evt_per_block=500)
+    assert with_jac.method == "evt" and with_jac.evt is not None
+    assert no_jac.method == "evt" and no_jac.evt is not None

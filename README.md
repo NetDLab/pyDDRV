@@ -1,12 +1,14 @@
 # pyddrv — Data-Driven Recurrence-based Verification
 
+[![CI](https://github.com/NetDLab/pyddrv/actions/workflows/ci.yml/badge.svg)](https://github.com/NetDLab/pyddrv/actions/workflows/ci.yml) [![arXiv](https://img.shields.io/badge/arXiv-2608.26447-b31b1b.svg)](https://arxiv.org/abs/2608.26447)
+
 Certify **exponential stability** and **regions of attraction** of a dynamical
 system **from sampled trajectories** — no Lyapunov function search, no model
 of the dynamics beyond a one-sided Lipschitz bound (which can itself be
 estimated from data).
 
 pyddrv implements verification via **Recurrent Lyapunov Functions (RLFs)**
-(Siegelmann, Shen, Paganini, Mallada): instead of constructing a Lyapunov
+(Siegelmann, Paganini, Mallada): instead of constructing a Lyapunov
 function whose sublevel sets are invariant, take the plain norm
 `V(x) = ‖x − x*‖` and certify from trajectories that it is **τ-recurrent** —
 within a horizon `τ` it dips back below `e^{−ατ} V`. Recurrence permits
@@ -143,8 +145,8 @@ benchmark tables and figures.
 
 ## Citing
 
-R. Siegelmann, Y. Shen, F. Paganini, E. Mallada. *Stability Analysis and
-Data-driven Verification via Recurrent Lyapunov Functions.*
-([preprint](https://mallada.ece.jhu.edu/pubs/2025-Preprint-SSPM.pdf))
+R. Siegelmann, F. Paganini, E. Mallada. *Stability Analysis and Data-driven
+Verification via Recurrent Lyapunov Functions.* arXiv:2608.26447, 2026.
+([arxiv.org/abs/2608.26447](https://arxiv.org/abs/2608.26447))
 
 See `CITATION.cff` for BibTeX-ready metadata.

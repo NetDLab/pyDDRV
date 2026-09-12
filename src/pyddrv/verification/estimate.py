@@ -78,27 +78,50 @@ def excursion_radius(rollout, points, t_grid) -> float:
     return float(np.max(np.abs(ys)))
 
 
+def _jacobian_is_affine(jac, R_bar, d, n_pairs=8, rtol=1e-6, seed=0) -> bool:
+    """Sampled midpoint test for a state-affine Jacobian on the box ``Q_{R_bar}``:
+    ``J(a) + J(b) - 2 J((a+b)/2) == 0`` for every pair iff ``J`` is affine. Affine
+    Jacobians (the paper's bilinear systems) make the matrix measure convex in
+    ``x``, so its box supremum sits at a corner and the corner estimate is exact."""
+    rng = np.random.default_rng(seed)
+    scale = 0.0
+    resid = 0.0
+    for _ in range(n_pairs):
+        a, b = rng.uniform(-R_bar, R_bar, size=(2, d))
+        Ja, Jb, Jm = (np.asarray(jac(z), dtype=float) for z in (a, b, 0.5 * (a + b)))
+        scale = max(scale, float(np.max(np.abs(Ja))), float(np.max(np.abs(Jb))))
+        resid = max(resid, float(np.max(np.abs(Ja + Jb - 2.0 * Jm))))
+    return resid <= rtol * max(scale, 1.0)
+
+
 def _compute_L(f, R_bar, d, norm, jac, L_method, rho, evt_blocks, evt_per_block):
-    """Estimate ``L = sup_{Q_{R_bar}} mu(df/dx)``. ``L_method="corners"`` is the
-    exact box-corner max (correct only for affine Jacobians); ``"evt"`` is the
-    Knuth reverse-Weibull high-probability upper bound over the box (correct for
-    general nonlinear fields). Returns ``(L, evt_estimate_or_None)``."""
+    """Estimate ``L = sup_{Q_{R_bar}} mu(df/dx)``.
+
+    ``L_method``: ``"corners"`` -- exact box-corner max, correct ONLY for
+    state-affine Jacobians; ``"evt"`` -- the Knuth reverse-Weibull high-probability
+    upper bound over the box interior, correct for general nonlinear fields;
+    ``"auto"`` (default) -- ``"corners"`` when an analytic ``jac`` is supplied and
+    passes the sampled affinity test, ``"evt"`` otherwise (no Jacobian, or a
+    nonlinear one). Returns ``(L, evt_estimate_or_None, resolved_method)``."""
+    if L_method == "auto":
+        L_method = ("corners" if jac is not None
+                    and _jacobian_is_affine(jac, R_bar, d) else "evt")
     if L_method == "corners":
         L = one_sided_lipschitz(f, [0.0] * d, [R_bar] * d, norm=norm,
                                 method="corners", jac=jac)
-        return L, None
+        return L, None, "corners"
     if L_method == "evt":
         from ..lipschitz_evt import evt_one_sided_lipschitz
         est = evt_one_sided_lipschitz(f, [0.0] * d, [R_bar] * d, norm=norm,
                                       jac=jac, rho=rho, n_blocks=evt_blocks,
                                       n_per_block=evt_per_block)
-        return est.L, est
-    raise ValueError(f"unknown L_method {L_method!r}; use 'corners' or 'evt'")
+        return est.L, est, "evt"
+    raise ValueError(f"unknown L_method {L_method!r}; use 'auto', 'corners' or 'evt'")
 
 
 def estimate_L(rollout, R, eps, d, norm="2", tau=4.0, n_time=400, n_grid=21,
                slack=0.05, jac=None, f=None, refine_grid=3, n_grid_max=81,
-               L_method="corners", rho=0.95, evt_blocks=100, evt_per_block=1000
+               L_method="auto", rho=0.95, evt_blocks=100, evt_per_block=1000
                ) -> LipschitzEstimate:
     r"""Estimate ``L`` over the reachable box ``Q_{R_bar}`` (paper §IX-B).
 
@@ -153,8 +176,8 @@ def estimate_L(rollout, R, eps, d, norm="2", tau=4.0, n_time=400, n_grid=21,
             # such a huge box overflows; report it as uncertifiable instead.
             return LipschitzEstimate(L=float("inf"), R_bar=float(R_bar),
                                      R_max=float(R_max), discretization_ok=False)
-        L, evt_est = _compute_L(f, R_bar, d, norm, jac, L_method, rho,
-                                evt_blocks, evt_per_block)
+        L, evt_est, resolved = _compute_L(f, R_bar, d, norm, jac, L_method,
+                                          rho, evt_blocks, evt_per_block)
 
         # pass 2: RENEWAL-TERMINATED discretization check. The h-tube around a
         # sample, ``||phi(t,x_i)||_inf + h e^{tL}``, covers every unsampled
@@ -187,13 +210,14 @@ def estimate_L(rollout, R, eps, d, norm="2", tau=4.0, n_time=400, n_grid=21,
 
     return LipschitzEstimate(L=float(L), R_bar=float(R_bar), R_max=float(R_max),
                              discretization_ok=bool(discretization_ok),
-                             method=L_method, rho=(rho if L_method == "evt"
-                                                   else float("nan")),
+                             method=resolved,
+                             rho=(rho if resolved == "evt" else float("nan")),
                              evt=evt_est)
 
 
 def estimate_L_roa(rollout, R, d, norm="2", tau=2.0, n_time=200, n_grid=21,
-                   slack=0.05, jac=None, f=None, refine_grid=6, n_grid_max=1025
+                   slack=0.05, jac=None, f=None, refine_grid=6, n_grid_max=1025,
+                   L_method="auto", rho=0.95, evt_blocks=100, evt_per_block=1000
                    ) -> LipschitzEstimate:
     r"""Estimate ``L`` for Algorithm 2 (paper §IX-C): candidate sets ``S ⊆ Q_R``.
 
@@ -238,8 +262,8 @@ def estimate_L_roa(rollout, R, d, norm="2", tau=2.0, n_time=200, n_grid=21,
         if not np.isfinite(R_bar) or R_bar > 50.0 * R:
             return LipschitzEstimate(L=float("inf"), R_bar=float(R_bar),
                                      R_max=float(R_max), discretization_ok=False)
-        L = one_sided_lipschitz(f, [0.0] * d, [R_bar] * d,
-                                norm=norm, method="corners", jac=jac)
+        L, evt_est, resolved = _compute_L(f, R_bar, d, norm, jac, L_method,
+                                          rho, evt_blocks, evt_per_block)
 
         # pass 2: renewal-terminated (38) on Gamma_ret; one-sided non-return
         # check on Gamma_nr
@@ -269,4 +293,7 @@ def estimate_L_roa(rollout, R, d, norm="2", tau=2.0, n_time=200, n_grid=21,
         ng = min(n_grid_max, 2 * ng - 1)
 
     return LipschitzEstimate(L=float(L), R_bar=float(R_bar), R_max=float(R_max),
-                             discretization_ok=bool(discretization_ok))
+                             discretization_ok=bool(discretization_ok),
+                             method=resolved,
+                             rho=(rho if resolved == "evt" else float("nan")),
+                             evt=evt_est)

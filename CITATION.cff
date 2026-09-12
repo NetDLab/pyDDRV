@@ -14,10 +14,13 @@ preferred-citation:
   authors:
     - family-names: Siegelmann
       given-names: Roy
-    - family-names: Shen
-      given-names: Yue
     - family-names: Paganini
       given-names: Fernando
     - family-names: Mallada
       given-names: Enrique
-  url: "https://mallada.ece.jhu.edu/pubs/2025-Preprint-SSPM.pdf"
+  year: 2026
+  journal: "arXiv preprint"
+  identifiers:
+    - type: other
+      value: "arXiv:2608.26447"
+  url: "https://arxiv.org/abs/2608.26447"

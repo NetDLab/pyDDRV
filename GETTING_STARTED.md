@@ -71,9 +71,9 @@ pip install "pyddrv @ git+https://github.com/NetDLab/pyddrv"   # numpy only
 pytest -q
 ```
 
-Expected: **`74 passed`** on a full `[jax,sos]` install (about 45 s; most of the
+Expected: **`95 passed`** on a full `[jax,sos]` install (one to three minutes; most of the
 time is the SoS baseline tests). On a **numpy-only** install you should see
-roughly **`35 passed, 5 skipped`** — the skips are the JAX/torch/SoS tests,
+roughly **`55–58 passed`** with the rest skipped — the skips are the JAX/torch/SoS tests,
 which is correct and not a failure.
 
 > If pytest reports import errors about `pyddrv`, see Troubleshooting (§8):
@@ -83,7 +83,7 @@ which is correct and not a failure.
 
 ## 3. Reproduce the bundled results
 
-Three runnable demos live in `examples/`. Each prints a one-line certificate
+Four runnable demos live in `examples/`. Each prints a one-line certificate
 and writes raw results + a figure to `examples/output/`.
 
 ```bash
@@ -107,7 +107,7 @@ is doing what the paper claims. `pendulum` runs on the NumPy fallback on
 purpose (its `np.sin` field does not JIT-trace), so it also confirms the no-JAX
 path.
 
-**Prefer notebooks?** The same three walkthroughs, step by step with the
+**Prefer notebooks?** The same walkthroughs, step by step with the
 reasoning inline, are in [`examples/notebooks/`](examples/notebooks). Install the
 `examples` extra (matplotlib + JupyterLab) and open one — see that folder's
 README:
@@ -167,24 +167,29 @@ answer, slower. You do not choose the backend; it is probed. Force it with
 
 The certificate rests on a one-sided Lipschitz constant `L = sup μ(∂f/∂x)` over
 the reachable set. **A too-small `L` makes the certificate unsound**, so how you
-get it matters. Three options, best first:
+get it matters. The default `L_method="auto"` makes the safe choice for you:
 
-1. **You have a closed-form bound** → pass it as `L=...`. Rigorous, no sampling.
-   (Example: Kuramoto's `L ≤ 2k(n−1)/n`.)
-2. **General nonlinear field** → `L_method="evt"`. This uses the extreme-value
-   (reverse-Weibull) estimator of Knuth et al.: it samples `μ(∂f/∂x)` in the
-   *interior* of the box and extrapolates to a **high-probability upper bound**
-   (confidence `rho`, default 0.95). Diagnostics land in `report.lipschitz.evt`.
+- **You have a closed-form bound** → pass it as `L=...`. Rigorous, no sampling.
+  (Example: Kuramoto's `L ≤ 2k(n−1)/n`.)
+- **Otherwise `auto` decides per field.** If you pass an analytic `jac=` and it
+  passes a sampled affinity test (Jacobian affine in the state, e.g. the
+  bilinear systems), the box-corner estimate is used because it is *exact*
+  there. In every other case (no Jacobian, or a nonlinear one such as the
+  pendulum's `−cos θ`) it uses the extreme-value (reverse-Weibull) estimator of
+  Knuth et al., which samples `μ(∂f/∂x)` in the box *interior* and returns a
+  **high-probability upper bound** (confidence `rho`, default 0.95). Check what
+  was chosen in `report.lipschitz.method`; EVT diagnostics are in
+  `report.lipschitz.evt`.
 
-   ```python
-   report = verify_stability(f, R=0.8, d=2, tau=5.0, L_method="evt", rho=0.95)
-   print(report.L, report.lipschitz.evt.summary())
-   ```
-3. **State-affine Jacobian only** (e.g. bilinear systems) → `L_method="corners"`
-   (the default) is *exact* there. **Do not** trust `corners` for a general
-   nonlinear field: the true `sup μ` is often in the box interior, and corners
-   can miss it (we've seen it under-shoot by 3–6× on pendulum-like fields),
-   yielding an unsound `L`. Use `"evt"` instead.
+  ```python
+  report = verify_stability(f, R=0.8, d=2, tau=5.0)          # auto
+  print(report.lipschitz.method, report.L)
+  print(report.lipschitz.evt.summary() if report.lipschitz.evt else "corners")
+  ```
+- **Forcing a method:** `L_method="evt"` or `"corners"`. Only force `corners`
+  for a state-affine Jacobian: on a general nonlinear field the true `sup μ` is
+  often in the box interior and corners can miss it (we measured 3–6× under-
+  estimates on pendulum-like fields), yielding an unsound `L`.
 
 You can also estimate `L` straight from logged `(x, f(x))` data with no model:
 `pyddrv.evt_one_sided_lipschitz_from_data(states, derivatives, rho=0.95)`.
