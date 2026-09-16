@@ -114,6 +114,8 @@ src/pyddrv/
                    one-sided Lipschitz estimation with eq-(38) robustness check
   lipschitz.py     matrix measures / log-norms; L from data (Definition 2)
   lipschitz_evt.py extreme-value (reverse-Weibull) L estimation, high-prob bound
+                   contraction.py: trajectory-local contraction bound (tighter than
+                   the global r e^{Lt} inflation; torch kernel in contraction_torch.py)
   viz.py           plotting helpers (anytime curve, verified box, RoA cube map)
   systems/         example dynamics (NumPy + JAX variants) and an RK4 sampler
   data/            TrajectorySet container

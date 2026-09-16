@@ -71,9 +71,9 @@ pip install "pyddrv @ git+https://github.com/NetDLab/pyddrv"   # numpy only
 pytest -q
 ```
 
-Expected: **`95 passed`** on a full `[jax,sos]` install (one to three minutes; most of the
+Expected: **`116 passed`** on a full `[jax,sos]` install (one to three minutes; most of the
 time is the SoS baseline tests). On a **numpy-only** install you should see
-roughly **`55–58 passed`** with the rest skipped — the skips are the JAX/torch/SoS tests,
+roughly **`73 passed, 7 skipped`** — the skips are the JAX/torch/SoS tests,
 which is correct and not a failure.
 
 > If pytest reports import errors about `pyddrv`, see Troubleshooting (§8):
@@ -215,6 +215,13 @@ print(roa.summary())
 - **`verify_roa` requires JAX** (or `backend="torch"` with a torch field). On a
   numpy-only install it raises with a clear message; use the low-level
   `pyddrv.verification.find_alpha_roa` for a slow pure-NumPy fallback.
+- **Large runs (`d ≥ 4`, long budgets).** `verify_roa` forwards a set of
+  controls to the grower that came out of the paper's dimension sweep:
+  `priority="norm"` grows inside-out, `inner_first=` makes the certified set
+  reach the target ball first, `max_pending_parents=` bounds RAM by evicting
+  the lowest-value frontier (sound: evicted cubes just stay uncertified), and
+  with `spill_dir=` a disk-headroom guard (`min_disk_gb=`) stops cleanly
+  instead of filling the disk. None are needed for 2-D/3-D runs.
 
 ---
 

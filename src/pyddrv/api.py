@@ -434,6 +434,14 @@ def verify_roa(
     spill_dir : str, optional
         Stream certified cubes to disk (memmap-backed result) -- required
         for very long runs where the union outgrows RAM.
+    **kwargs :
+        Large-run controls forwarded to
+        :func:`pyddrv.verification.find_alpha_roa_fused`: ``priority``
+        (``"gain"`` | ``"norm"`` | ``"sizedist"``), ``inner_first`` /
+        ``inner_first_min_h``, ``max_pending_parents`` (bounded frontier with
+        sound eviction), ``min_disk_gb`` / ``disk_check_every`` (disk guard
+        with ``spill_dir``), and ``local_jac`` / ``local_M`` (trajectory-local
+        contraction bound, torch backend). See that function's docstring.
     """
     eps = _default_eps(R) if eps is None else float(eps)
     n_steps = _default_steps(tau) if n_steps is None else int(n_steps)

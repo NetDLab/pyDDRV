@@ -744,7 +744,13 @@ def find_alpha_roa_fused(f, L, R, eps, d, alpha, *, norm="2", tau=2.0,
                          raster_n=2187, grid0=None, dtype="float32",
                          tile_size=100_000, max_seconds=None,
                          plateau_rel=None, verbose=False, backend="jax",
-                         spill_dir=None, odd_field_sym=False):
+                         spill_dir=None, odd_field_sym=False,
+                         inner_first=None, inner_first_min_h=None,
+                         priority="gain", sizedist_eta=None,
+                         local_jac=None, local_M=None,
+                         max_pending_parents=400_000_000,
+                         min_disk_gb=10.0, disk_check_every=10_000_000,
+                         t_kernel_override=None):
     r"""Algorithm 2 with the fused kernel. Mirrors
     :func:`pyddrv.verification.algorithm2.find_alpha_roa`: grow ``Positives`` at
     the target rate ``alpha`` from the layered grid (or ``grid0``), splitting
@@ -776,11 +782,57 @@ def find_alpha_roa_fused(f, L, R, eps, d, alpha, *, norm="2", tau=2.0,
     them in RAM -- resident memory stays O(tile) regardless of budget; the
     returned centers/halfs/depths are read-only memmaps of those files.
     REQUIRED for long runs: a 10^4 s GPU run certifies ~10^9 cubes (~25 GB),
-    which OOM-kills the process if held in RAM (observed 2026-07-05)."""
+    which OOM-kills the process if held in RAM (observed 2026-07-05).
+
+    Large-run controls (all additive; defaults reproduce the basic algorithm):
+
+    ``priority``: order of the refinement frontier. ``"gain"`` (default) =
+    expected certified volume from the one-split lookahead; ``"norm"`` =
+    nearest-the-equilibrium first (inside-out wavefront); ``"sizedist"`` =
+    largest ``2h/(||x|| + eta)`` first (big cubes near the equilibrium;
+    ``sizedist_eta`` defaults to ``eps``). Order changes *which* cubes get
+    evaluated under a budget, never the soundness of what is certified.
+
+    ``inner_first``: radius of an inner zone whose chunks outrank all rim work,
+    so the certified set reaches the target ball ``B_eps`` before the budget is
+    spent on the boundary. ``inner_first_min_h`` puts a size floor on that
+    boost (cubes finer than it rejoin normal priority) -- at high ``d`` the
+    shell of hole-boundary dust otherwise consumes the whole budget.
+
+    ``max_pending_parents``: cap on the frontier size. When exceeded the
+    lowest-gain HALF of the queue is evicted (sound: evicted cubes are simply
+    never certified), keeping RAM flat on runs whose rim frontier would
+    otherwise reach billions of parents and OOM-kill the process silently.
+
+    ``min_disk_gb`` / ``disk_check_every``: with ``spill_dir``, stop cleanly
+    with ``stop_reason="disk"`` when free space drops below ``min_disk_gb``,
+    checked every ``disk_check_every`` tested cubes (``None`` disables).
+
+    ``local_jac`` / ``local_M`` (``backend="torch"`` only, no Trim): replace
+    the global ``r e^{Lt}`` inflation by the trajectory-local contraction bound
+    of :mod:`pyddrv.verification.contraction` (``local_jac`` a batched torch
+    Jacobian, ``local_M`` a Jacobian-Lipschitz constant); never worse than
+    the global bound. ``t_kernel_override``: supply your own single-pass torch
+    kernel (advanced).
+
+    The plateau stop additionally refuses to fire while cubes at least as
+    coarse as the largest certified cube are still pending (the lookahead is
+    blind during the initial descent, which produced false plateaus at d=5)."""
     c = norm_equiv_c(norm, d)
     key = _norm_key(norm)
     use_region = trim_region is not None
-    if backend == "torch":
+    use_local = local_jac is not None
+    if backend == "torch" and t_kernel_override is not None:
+        if use_region:
+            raise ValueError("t_kernel_override is single-pass (no trim)")
+        t_kernel = t_kernel_override
+    elif backend == "torch" and use_local:
+        # trajectory-LOCAL contraction bound (no Trim/region on this path)
+        if use_region:
+            raise ValueError("local bound path is single-pass (no trim)")
+        from .contraction_torch import make_local_roa_kernel
+        t_kernel = make_local_roa_kernel(f, local_jac, key, local_M)
+    elif backend == "torch":
         # f must be a BATCHED TORCH field; region (Trim) supported via dmap
         from .fused_torch import make_torch_roa_kernel
         t_kernel = make_torch_roa_kernel(f, key)
@@ -828,6 +880,9 @@ def find_alpha_roa_fused(f, L, R, eps, d, alpha, *, norm="2", tau=2.0,
                 break
             c_t, h_t = cs[s:s + tile_size], hs[s:s + tile_size]
             N = len(c_t)
+            if backend == "torch" and use_local:
+                a, a3 = t_kernel(c_t, h_t, float(tau), n_steps, float(L), float(c))
+                out.append(a); out3.append(a3); continue
             if backend == "torch":      # no pow2 padding: no XLA recompiles
                 a, a3 = t_kernel(c_t, h_t, float(tau), n_steps, float(L),
                                  float(c),
@@ -878,32 +933,94 @@ def find_alpha_roa_fused(f, L, R, eps, d, alpha, *, norm="2", tau=2.0,
     par_batch = max(1, (4 * tile_size) // 3 ** d)
     heap, tie = [], 0
     pending_gain = 0.0      # sum over queue of chunk volume x lookahead p_hat
+    pending_parents = 0     # frontier size; bounded (best-first eviction)
+    n_evicted = 0
+    pending_by_h = {}       # pending parent count per EVALUATED half-width
+    h_cert_max = 0.0        # largest certified cube so far
 
-    def push(cs, hs, ds, needs_split, p_hat):
-        nonlocal tie, pending_gain
+    def push(cs, hs, ds, needs_split, p_hat, boost=False):
+        nonlocal tie, pending_gain, pending_parents
         if not len(cs):
             return
         h_eval = float(hs[0]) / 3.0 if needs_split else float(hs[0])
         gain = (2.0 * h_eval) ** d * (p_hat + P_FLOOR)
+        if boost:
+            # inner-first: near-target chunks outrank ALL rim work so the
+            # certified set reaches the hole (epsilon evidence) before the
+            # budget is spent on the rim
+            gain += 1e9
         # expected one-split certified volume of this chunk: splitting
         # preserves volume, so it is p_hat x the chunk's own volume
         exp_gain = p_hat * float(np.sum((2.0 * hs) ** d))
-        heapq.heappush(heap, (-gain, tie, (cs, hs, ds, needs_split, exp_gain)))
+        if priority == "norm":
+            # WAVEFRONT proxy: pop nearest-the-equilibrium chunks first so the
+            # certified region grows inside-out (for a star-shaped basin,
+            # distance-to-certified == distance-to-origin == ||x||). Key is the
+            # chunk's min centre-norm; heapq pops smallest first. No boost /
+            # inner-first needed -- norm order reaches the hole for free.
+            skey = float(_norm_np(cs, key).min())
+        elif priority == "sizedist":
+            # side / (distance-to-equilibrium + eta): prefer big cubes near the
+            # equilibrium. 2h/||x|| is the relative resolution that governs
+            # certifiability, so this ranks cubes by how close they are to
+            # being both large AND certifiable. Pop LARGEST ratio first.
+            _e = eps if sizedist_eta is None else sizedist_eta
+            skey = -(2.0 * h_eval) / (float(_norm_np(cs, key).min()) + _e)
+        else:
+            skey = -gain
+        heapq.heappush(heap, (skey, tie, (cs, hs, ds, needs_split, exp_gain)))
         pending_gain += exp_gain
+        pending_parents += len(cs)
+        hk = round(h_eval, 12)
+        pending_by_h[hk] = pending_by_h.get(hk, 0) + len(cs)
         tie += 1
+
+    def push_part(cs, hs, ds, needs_split, p_hat):
+        # split chunks into inner-zone (boosted) and rest. The boost has a
+        # size FLOOR: hole-boundary dust (h below inner_first_min_h) rejoins
+        # normal priority -- at high d that shell grows 3^{(d-1)j} per level
+        # and would otherwise consume the whole budget (observed at d=6)
+        if inner_first is None or not len(cs):
+            push(cs, hs, ds, needs_split, p_hat)
+            return
+        h_eval = hs / 3.0 if needs_split else hs
+        inz = (np.abs(cs).max(axis=1) + hs) <= inner_first
+        if inner_first_min_h is not None:
+            inz = inz & (h_eval >= inner_first_min_h * 0.999)
+        push(cs[inz], hs[inz], ds[inz], needs_split, p_hat, boost=True)
+        push(cs[~inz], hs[~inz], ds[~inz], needs_split, p_hat)
 
     hr = np.round(halfs, 12)
     for h in np.unique(hr):                 # uniform-size initial chunks
         m_ = hr == h
-        push(centers[m_], halfs[m_], depths[m_], False, 0.0)
+        push_part(centers[m_], halfs[m_], depths[m_], False, 0.0)
     t_last_log, v_last_log = -1e30, 0.0
     stop_reason = "complete"
     while heap:
+        if pending_parents > max_pending_parents:
+            # bounded best-first: evict the lowest-gain HALF of the frontier
+            # (sound: evicted cubes stay uncertified). Keeps RAM flat when the
+            # rim frontier reaches billions of parents.
+            heap.sort()
+            keep = max(1, len(heap) // 2)   # never empty the frontier
+            for _, _, (ec, _eh, _ed, _es, eg) in heap[keep:]:
+                pending_gain -= eg
+                pending_parents -= len(ec)
+                n_evicted += len(ec)
+                _k = round(float(_eh[0]) / 3.0 if _es else float(_eh[0]), 12)
+                pending_by_h[_k] = pending_by_h.get(_k, 0) - len(ec)
+            del heap[keep:]
+            if verbose:
+                print(f"  [roa] frontier eviction: kept {keep} chunks, "
+                      f"evicted total {n_evicted} parents", flush=True)
         _, _, (cs, hs, ds, needs_split, exp_gain) = heapq.heappop(heap)
         pending_gain -= exp_gain
+        pending_parents -= len(cs)
+        _hk = round(float(hs[0]) / 3.0 if needs_split else float(hs[0]), 12)
+        pending_by_h[_hk] = pending_by_h.get(_hk, 0) - len(cs)
         if needs_split:
             cs, hs = split_many(cs, hs)
-            ds = np.repeat(ds + 1, 3 ** d)
+            ds = np.repeat(ds.astype(np.uint8) + 1, 3 ** d)
         a, a3 = evaluate(cs, hs, deadline)
         if len(a) < len(cs):            # deadline cut this batch short
             budget_hit = True
@@ -924,6 +1041,8 @@ def find_alpha_roa_fused(f, L, R, eps, d, alpha, *, norm="2", tau=2.0,
             pos_h.append(hs[passed].astype(np.float32))
             pos_d.append(ds[passed].astype(np.uint8))
         n_cert += int(passed.sum())
+        if passed.any():
+            h_cert_max = max(h_cert_max, float(hs[passed].max()))
         vol += float(np.sum((2.0 * hs[passed]) ** d))
         elapsed = time.perf_counter() - t_start
         trace.append((elapsed, float(hs[0]), n_tested, n_cert, vol))
@@ -940,10 +1059,24 @@ def find_alpha_roa_fused(f, L, R, eps, d, alpha, *, norm="2", tau=2.0,
             budget_hit = True
             stop_reason = "budget"
             break
+        if (spill_dir is not None and min_disk_gb is not None
+                and (n_tested // disk_check_every)
+                != ((n_tested - len(cs)) // disk_check_every)):
+            import shutil
+            if shutil.disk_usage(spill_dir).free < min_disk_gb * 1e9:
+                budget_hit = True
+                stop_reason = "disk"
+                break
         if plateau_rel is not None and vol > 0:
             import bisect
             j = bisect.bisect_left(trace_t, elapsed / 2.0)
-            if (j < len(trace) - 1 and trace_v[j] > 0
+            # (c) NO plateau while cubes at least as coarse as the largest
+            # certified cube are still pending: during the initial descent the
+            # one-step lookahead is blind (gains are >=2 splits away) and
+            # conditions (a)+(b) go quiet spuriously (observed at d=5)
+            coarse_pending = any(cnt > 0 and hk >= h_cert_max / 3.0
+                                 for hk, cnt in pending_by_h.items())
+            if (not coarse_pending and j < len(trace) - 1 and trace_v[j] > 0
                     and vol < (1 + plateau_rel) * trace_v[j]
                     and pending_gain < plateau_rel * vol):
                 stop_reason = "plateau"
@@ -953,14 +1086,19 @@ def find_alpha_roa_fused(f, L, R, eps, d, alpha, *, norm="2", tau=2.0,
         # (children inherit the dtype): the pending frontier of a long run is
         # hundreds of millions of cubes, f64 doubles its footprint for nothing
         splittable = (~passed) & (ds < max_refine)
-        order = np.argsort(-a3[splittable])          # best lookahead first
+        if priority == "norm":                       # nearest-origin first
+            order = np.argsort(_norm_np(cs[splittable], key))
+        elif priority == "sizedist":                 # near-equilibrium first
+            order = np.argsort(_norm_np(cs[splittable], key))
+        else:
+            order = np.argsort(-a3[splittable])      # best lookahead first
         pc = cs[splittable][order].astype(np.float32, copy=False)
         ph = hs[splittable][order].astype(np.float32, copy=False)
         pd, pa3 = ds[splittable][order], a3[splittable][order]
         for s in range(0, len(pc), par_batch):
             p_hat = float(np.mean(pa3[s:s + par_batch] >= alpha))
-            push(pc[s:s + par_batch], ph[s:s + par_batch],
-                 pd[s:s + par_batch], True, p_hat)
+            push_part(pc[s:s + par_batch], ph[s:s + par_batch],
+                      pd[s:s + par_batch], True, p_hat)
 
     if spill is not None:
         import os as _os
