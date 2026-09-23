@@ -140,7 +140,7 @@ The extreme-value estimate can fail on large boxes. For the pendulum with
 `R = 3`, trajectories from the corners swing over the top, the reachable set is
 large, the sampled maxima all take the same value, and the fit breaks down: it
 returns an `L` in the millions and nothing is certified. With `L=0.62` the same
-call certifies 84% of the box. When a closed-form bound is available, use it.
+call certifies 82% of the box. When a closed-form bound is available, use it.
 
 If you have measured states and derivatives but no model, the one-sided
 Lipschitz constant can be estimated from those samples with
