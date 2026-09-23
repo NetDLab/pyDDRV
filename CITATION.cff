@@ -6,7 +6,7 @@ authors:
   - family-names: Mallada
     given-names: Enrique
     affiliation: "Johns Hopkins University"
-repository-code: "https://github.com/NetDLab/pyddrv"
+repository-code: "https://github.com/NetDLab/pyDDRV"
 license: BSD-3-Clause
 preferred-citation:
   type: article

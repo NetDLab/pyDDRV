@@ -8,7 +8,7 @@
 <h1 align="center">pyDDRV — Data-Driven Recurrence-based Verification</h1>
 
 <p align="center">
-  <a href="https://github.com/NetDLab/pyddrv/actions/workflows/ci.yml"><img src="https://github.com/NetDLab/pyddrv/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/NetDLab/pyDDRV/actions/workflows/ci.yml"><img src="https://github.com/NetDLab/pyDDRV/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://arxiv.org/abs/2608.26447"><img src="https://img.shields.io/badge/arXiv-2608.26447-b31b1b.svg" alt="arXiv"></a>
 </p>
 
@@ -100,9 +100,9 @@ per run practical.
 ## Install
 
 ```bash
-pip install "pyddrv[jax] @ git+https://github.com/NetDLab/pyddrv"   # recommended
+pip install "pyddrv[jax] @ git+https://github.com/NetDLab/pyDDRV"   # recommended
 # or, for development:
-git clone https://github.com/NetDLab/pyddrv && cd pyddrv
+git clone https://github.com/NetDLab/pyDDRV && cd pyDDRV
 conda env create -f environment.yml && conda activate pyddrv        # numpy+scipy+jax
 pip install -e ".[dev]"
 pytest

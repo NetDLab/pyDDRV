@@ -42,4 +42,4 @@ First public release.
 - Continuous integration on Linux (Python 3.10, 3.12) and Windows (3.11),
   with and without JAX.
 
-[0.1.0]: https://github.com/NetDLab/pyddrv/releases/tag/v0.1.0
+[0.1.0]: https://github.com/NetDLab/pyDDRV/releases/tag/v0.1.0

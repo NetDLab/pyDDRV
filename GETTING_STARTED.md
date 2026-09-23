@@ -30,7 +30,7 @@ You need Python ≥ 3.10. Two supported paths:
 
 ```bash
 python -m venv pyddrv-env && source pyddrv-env/bin/activate
-pip install "pyddrv[jax,dev] @ git+https://github.com/NetDLab/pyddrv"
+pip install "pyddrv[jax,dev] @ git+https://github.com/NetDLab/pyDDRV"
 ```
 
 `[jax]` pulls the fast fused kernel (CPU; still fast). `[dev]` adds pytest and
@@ -39,7 +39,7 @@ matplotlib so you can run the test suite and the example figures.
 ### Option B — development clone (to read/modify the code)
 
 ```bash
-git clone https://github.com/NetDLab/pyddrv && cd pyddrv
+git clone https://github.com/NetDLab/pyDDRV && cd pyDDRV
 conda env create -f environment.yml     # creates the `pyddrv` env: numpy+scipy+jax
 conda activate pyddrv
 pip install -e ".[dev]"
@@ -52,7 +52,7 @@ The certifier runs on a pure-NumPy fallback with **identical certificates**
 problem on your platform:
 
 ```bash
-pip install "pyddrv @ git+https://github.com/NetDLab/pyddrv"   # numpy only
+pip install "pyddrv @ git+https://github.com/NetDLab/pyDDRV"   # numpy only
 ```
 
 ### Optional extras
@@ -113,7 +113,7 @@ reasoning inline, are in [`examples/notebooks/`](examples/notebooks). Install th
 README:
 
 ```bash
-pip install "pyddrv[jax,examples] @ git+https://github.com/NetDLab/pyddrv"
+pip install "pyddrv[jax,examples] @ git+https://github.com/NetDLab/pyDDRV"
 jupyter lab
 ```
 
@@ -326,7 +326,7 @@ region-of-attraction sweeps (high dimension / long budgets).
 **NVIDIA GPU (Linux, or Windows via WSL2):**
 
 ```bash
-pip install "pyddrv[jax-cuda] @ git+https://github.com/NetDLab/pyddrv"
+pip install "pyddrv[jax-cuda] @ git+https://github.com/NetDLab/pyDDRV"
 python -c "import jax; print(jax.devices())"   # expect [CudaDevice(id=0)]
 ```
 

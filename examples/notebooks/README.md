@@ -17,7 +17,7 @@ Use a clean Python **3.10+** environment (the macOS system `python3` is often
 
 ```bash
 python3.12 -m venv pyddrv-env && source pyddrv-env/bin/activate   # any 3.10+
-pip install "pyddrv[jax,examples] @ git+https://github.com/NetDLab/pyddrv"
+pip install "pyddrv[jax,examples] @ git+https://github.com/NetDLab/pyDDRV"
 jupyter lab                       # then open a notebook and "Run All"
 ```
 
