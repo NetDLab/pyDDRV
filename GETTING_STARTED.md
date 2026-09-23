@@ -136,11 +136,25 @@ strongest to weakest.
 `report.lipschitz.method` records which method was used, and
 `report.lipschitz.evt` holds the diagnostics of the extreme-value fit.
 
-The extreme-value estimate can fail on large boxes. For the pendulum with
-`R = 3`, trajectories from the corners swing over the top, the reachable set is
-large, the sampled maxima all take the same value, and the fit breaks down: it
-returns an `L` in the millions and nothing is certified. With `L=0.62` the same
-call certifies 84% of the box. When a closed-form bound is available, use it.
+Without `jac`, the Jacobian is computed by finite differences with a step
+suited to the precision of `f`. A field written with `jax.numpy` computes in
+single precision. The error of each sampled value is estimated, reported as
+`report.lipschitz.evt.resolution`, and added to `L`.
+
+The extreme-value fit needs the sampled maxima to vary, and on large boxes they
+may not. For the pendulum with `R = 3`, trajectories from the corners swing
+over the top, the box that contains the reachable set includes the states where
+the matrix measure is largest, and almost every block of samples reaches the
+same value. When the fit is ill-posed in this way, or the Kolmogorov-Smirnov
+test rejects it, pyDDRV reports the largest sampled value plus a margin taken
+from the spread of the sampled maxima. `report.lipschitz.evt.status` is then
+`"fallback"` instead of `"fit"`, and `report.lipschitz.evt.reason` says why.
+The margin keeps the probability `rho` under the extreme-value model for every
+shape of the distribution that the state dimension allows, without estimating
+its parameters. It still relies on that model, which the data did not
+confirm. For the pendulum with `R = 3` the default gives `L = 0.6181` and
+certifies the same region as `L=0.62`. When a closed-form bound is available,
+use it.
 
 If you have measured states and derivatives but no model, the one-sided
 Lipschitz constant can be estimated from those samples with
