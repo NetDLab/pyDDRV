@@ -82,7 +82,7 @@ from typing import Callable, Optional
 
 import numpy as np
 
-from .lipschitz import numerical_jacobian
+from .lipschitz import batched_numerical_jacobian as _batched_numerical_jacobian
 
 
 @dataclass
@@ -197,45 +197,6 @@ def _matrix_measure_batch(A, norm="2", P=None) -> np.ndarray:
         offdiag = absA.sum(axis=-2) - np.abs(diag)          # col sums
         return np.max(diag + offdiag, axis=-1)
     raise ValueError(f"unsupported norm {norm!r}")
-
-
-def _batched_numerical_jacobian(f, X, eps=None, step_factor=1.0) -> np.ndarray:
-    r"""Central-difference Jacobians for a batch of points ``X: (n, d)`` in a
-    single field evaluation. Returns ``(n, d, d)`` with ``J[k, i, j] =
-    df_i/dx_j`` at ``X[k]``. ``f`` is the batched field ``(m, d) -> (m, d)``.
-
-    With ``eps=None`` the step follows the precision of ``f``'s output:
-    ``h_j = u^{1/3} max(1, |x_j|)``, with ``u`` the unit roundoff of that dtype,
-    which balances truncation and rounding error. A field written with
-    ``jax.numpy`` computes in float32 by default, and a fixed step of ``1e-6``
-    would then give derivatives dominated by rounding error. The perturbed points
-    are rounded to that dtype before the call and the step is taken from the
-    rounded values, so the divided difference uses the step ``f`` actually saw.
-    A float ``eps`` gives the fixed absolute step of earlier versions.
-    ``step_factor`` multiplies the step (used to estimate the error by
-    comparing two steps)."""
-    X = np.asarray(X, dtype=float)
-    n, d = X.shape
-    if eps is None:
-        dt = np.asarray(f(X[:1])).dtype
-        dt = dt if np.issubdtype(dt, np.floating) else np.dtype(float)
-        H = (step_factor * np.cbrt(np.finfo(dt).eps)
-             * np.maximum(1.0, np.abs(X)))                  # (n, d)
-    else:
-        dt = np.dtype(float)
-        H = np.full_like(X, step_factor * float(eps))
-    # perturbations: for each point, +/- h_j along axis j -> (n, d, d)
-    D = H[:, :, None] * np.eye(d)[None, :, :]               # row j = h_j e_j
-    plus = (X[:, None, :] + D).astype(dt).astype(float)
-    minus = (X[:, None, :] - D).astype(dt).astype(float)
-    step = np.einsum("njj->nj", plus - minus)               # (n, d) = 2 h_j
-    pts = np.concatenate([plus, minus], axis=1).reshape(n * 2 * d, d)
-    vals = np.asarray(f(pts), dtype=float).reshape(n, 2 * d, d)
-    fp = vals[:, :d, :]                                     # (n, d_axis, d_out)
-    fm = vals[:, d:, :]
-    # column j of J is df/dx_j = (fp_j - fm_j)/step_j; assemble (n, d_out, d_axis)
-    J = np.swapaxes((fp - fm) / step[:, :, None], 1, 2)
-    return J
 
 
 # --------------------------------------------------------------------------- #

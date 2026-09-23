@@ -30,10 +30,10 @@ Changes to pyDDRV, by version. Versions follow
 - Extreme-value Lipschitz estimate on large boxes. For the damped pendulum
   written with `jax.numpy`, `verify_roa(..., R=3.0)` estimated `L = 1.78e6`
   and certified nothing; it now estimates `L = 0.6181` (exact value 0.618).
-  - Finite-difference Jacobians use a step matched to the precision of the
-    field. The fixed step `1e-6` gave errors near 0.15 for float32 fields.
-    The estimated error of each sample is added to `L`
-    (`EVTEstimate.resolution`).
+  - Finite-difference Jacobians (`numerical_jacobian` and the extreme-value
+    sampler) use a step matched to the precision of the field. The fixed step
+    `1e-6` gave errors near 0.15 for float32 fields. The estimated error of
+    each sample is added to `L` (`EVTEstimate.resolution`).
   - The reverse-Weibull fit tries several starting points, and each bootstrap
     fit starts from the full-sample fit. SciPy's default start could converge
     to a poor local optimum or diverge.
