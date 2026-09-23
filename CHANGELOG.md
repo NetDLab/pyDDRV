@@ -3,6 +3,12 @@
 All notable changes to pyddrv are recorded here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Documentation
+- Project logo (light and dark variants, `docs/assets/`) in the README header,
+  switching with the viewer's GitHub theme.
+
 ## [0.1.0] — 2026-09-17
 
 First public release.

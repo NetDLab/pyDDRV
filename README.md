@@ -1,6 +1,16 @@
-# pyddrv — Data-Driven Recurrence-based Verification
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/pyddrv-mark-dark.svg">
+    <img src="docs/assets/pyddrv-mark-light.svg" alt="pyddrv logo: a trajectory that rises above, then recurrently returns below, a certified decay envelope over a layered verification grid" width="140">
+  </picture>
+</p>
 
-[![CI](https://github.com/NetDLab/pyddrv/actions/workflows/ci.yml/badge.svg)](https://github.com/NetDLab/pyddrv/actions/workflows/ci.yml) [![arXiv](https://img.shields.io/badge/arXiv-2608.26447-b31b1b.svg)](https://arxiv.org/abs/2608.26447)
+<h1 align="center">pyddrv — Data-Driven Recurrence-based Verification</h1>
+
+<p align="center">
+  <a href="https://github.com/NetDLab/pyddrv/actions/workflows/ci.yml"><img src="https://github.com/NetDLab/pyddrv/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://arxiv.org/abs/2608.26447"><img src="https://img.shields.io/badge/arXiv-2608.26447-b31b1b.svg" alt="arXiv"></a>
+</p>
 
 Certify **exponential stability** and **regions of attraction** of a dynamical
 system **from sampled trajectories** — no Lyapunov function search, no model
@@ -121,6 +131,7 @@ src/pyddrv/
   data/            TrajectorySet container
   baselines/       optional box-SoS comparison (SumOfSquares/PICOS)
 examples/          runnable demos (stability, anytime frontier, Kuramoto RoA)
+docs/assets/       logo (light and dark variants)
 tests/             pytest suite
 ```
 
