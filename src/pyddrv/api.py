@@ -1,24 +1,19 @@
-r"""High-level, one-call verification API.
+r"""The two main functions of pyDDRV.
 
-This module is the recommended entry point for library users. It wires the
-pieces of the pipeline together with sound defaults:
+- :func:`verify_stability` certifies an exponential decay rate ``alpha`` for
+  ``V(x) = ||x - x*||`` on the box ``Q_R`` around an equilibrium ``x*``.
+- :func:`verify_roa` certifies, for a given rate ``alpha``, an inner
+  approximation of the region of attraction as a union of cubes.
 
-1. :func:`verify_stability` -- certify a guaranteed exponential decay rate
-   ``alpha`` for ``V(x) = ||x - x*||`` over the box ``Q_R`` around the
-   equilibrium ``x*`` (Algorithm 1: one-sided Lipschitz estimation, layered
-   covering grid, Theorem-8 ball certificates, adaptive refinement).
-2. :func:`verify_roa` -- given a target rate ``alpha``, grow a certified
-   inner approximation of the region of attraction as a union of cubes
-   (Algorithm 2).
+Both simulate a batched vector field ``f: (N, d) -> (N, d)`` supplied by the
+user. A field written with ``jax.numpy`` runs on the compiled JAX kernel; a
+field written with NumPy runs on a NumPy kernel with the same results
+(``verify_stability`` only). The lower-level functions are in
+:mod:`pyddrv.verification`.
 
-Both accept a *batched* vector field ``f : (N, d) -> (N, d)``. If the field is
-written with backend-agnostic ops (or ``jax.numpy``), the fused JAX kernel is
-used automatically; otherwise the NumPy kernel runs (same certificates, slower).
-Everything low-level remains available in :mod:`pyddrv.verification`.
-
-Coordinates: all internal machinery assumes the equilibrium at the origin.
-Passing ``equilibrium=x_star`` shifts the field for you, and reported
-regions/cubes are shifted back to original coordinates.
+The computations assume the equilibrium is at the origin. With
+``equilibrium=x_star`` the field is shifted internally, and results are
+reported in the original coordinates.
 """
 from __future__ import annotations
 
@@ -89,14 +84,13 @@ def _probe_backend(f: Callable, d: int, backend: str, *,
                    jit_fallback: bool = False) -> str:
     """Resolve ``backend="auto"``: use JAX only if ``f`` is a JAX field.
 
-    A field written with ``jax.numpy`` ops returns a ``jax.Array`` even for a
-    NumPy input, so we first evaluate ``f`` on a small NumPy batch and check
-    the output type -- **no exception is raised for the common plain-NumPy
-    case** (an earlier version probed by attempting ``jax.jit`` and catching
-    ``TracerArrayConversionError``, which worked but made debuggers configured
-    to break on raised exceptions -- e.g. VS Code -- pause inside the library
-    on the very first example). A field that returned a JAX array is then
-    confirmed to trace under jit.
+    A field written with ``jax.numpy`` returns a ``jax.Array`` even for a NumPy
+    input, so ``f`` is first evaluated on a small NumPy batch and the type of
+    the output is checked. No exception is raised for a NumPy field. (An
+    earlier version tried ``jax.jit`` and caught the resulting
+    ``TracerArrayConversionError``; debuggers set to stop on raised exceptions,
+    such as VS Code's, then paused inside the library.) A field that returns a
+    JAX array is then checked to trace under jit.
 
     ``jit_fallback=True`` (used by :func:`verify_roa`, which has no NumPy
     kernel) additionally attempts jit on ndarray-returning fields: operator-only
@@ -135,25 +129,27 @@ def _default_steps(tau: float) -> int:
 
 
 # --------------------------------------------------------------------------- #
-# stability (Algorithm 1)
+# stability
 # --------------------------------------------------------------------------- #
 @dataclass
 class StabilityReport:
-    """Outcome of :func:`verify_stability`.
+    """Result of :func:`verify_stability`.
 
-    ``alpha`` is the *guaranteed* exponential rate: every trajectory starting
-    in ``Q_R \\ B_eps`` (coordinates relative to the equilibrium) satisfies the
-    tau-recurrence ``min_{0<s<=tau} e^{alpha s} V(x(t+s)) <= V(x(t))``, which
-    yields ``V(x(t)) <= C e^{-alpha t} V(x(0))`` until ``B_eps`` is reached.
-    A negative/-inf ``alpha`` means no rate was certified (not a disproof).
+    ``alpha`` is the certified rate. Every trajectory starting in
+    ``Q_R \\ B_eps`` (relative to the equilibrium) satisfies
+    ``min_{0<s<=tau} e^{alpha s} V(x(t+s)) <= V(x(t))``, and hence
+    ``V(x(t)) <= C e^{-alpha t} V(x(0))`` until it enters ``B_eps``. This holds
+    provided ``L`` bounds the one-sided Lipschitz constant; see ``lipschitz``.
+    A negative or infinite ``alpha`` means no rate was certified, which does
+    not show that the equilibrium is unstable.
     """
 
-    alpha: float                    # certified rate (the guarantee)
-    alpha_upper: float              # data-driven ceiling (best achievable here)
+    alpha: float                    # certified rate
+    alpha_upper: float              # rate certified at the cube centers alone
     suboptimality: float            # relative gap at the binding cube
     converged: bool                 # gap <= delta (False: budget-limited)
     L: float                        # one-sided Lipschitz constant used
-    discretization_ok: bool         # eq-(38) continuum check passed
+    discretization_ok: bool         # boundary samples cover the reachable set
     equilibrium: np.ndarray
     norm: str
     R: float
@@ -210,71 +206,68 @@ def verify_stability(
     record_trace: bool = False,
     **kwargs,
 ) -> StabilityReport:
-    r"""Certify an exponential decay rate over ``Q_R`` from simulated data.
+    r"""Certify an exponential decay rate on ``Q_R`` by simulating ``f``.
 
     Parameters
     ----------
     f : callable
-        Batched vector field ``(N, d) -> (N, d)``. Written with
-        backend-agnostic ops (or ``jax.numpy``) it runs on the fused JAX
-        kernel; plain-NumPy fields automatically use the NumPy kernel.
+        Batched vector field ``(N, d) -> (N, d)``. A field written with
+        ``jax.numpy`` runs on the compiled JAX kernel; a field written with
+        NumPy runs on the NumPy kernel.
     R : float
-        Inf-norm radius of the verification box ``Q_R`` (about the
-        equilibrium).
+        Half-width of the box ``Q_R = {||x - x*||_inf <= R}``.
     d : int
         State dimension.
     jac : callable, optional
-        Analytic Jacobian ``x -> (d, d)``. Makes the one-sided Lipschitz
-        constant exact at box corners for fields with state-affine Jacobian;
-        otherwise a numerical Jacobian is used.
+        Analytic Jacobian ``x -> (d, d)``. If it is affine in the state, the
+        one-sided Lipschitz constant is computed exactly at the box corners.
+        Otherwise a numerical Jacobian is used.
     L : float, optional
-        One-sided Lipschitz constant over the reachable set, if you already
-        have one (e.g. a closed-form bound, or
-        :func:`pyddrv.lipschitz.one_sided_lipschitz_from_data` from
-        experimental data). If omitted it is estimated from boundary
-        trajectories (paper §IX-B), including the discretization-robustness
-        check.
+        Upper bound on the one-sided Lipschitz constant of ``f`` over the
+        states visited by trajectories from ``Q_R``, for example a bound
+        derived by hand. If omitted, the reachable set is estimated from
+        trajectories started on the boundary of ``Q_R``, ``L`` is estimated
+        over it (see ``L_method``), and a check that the boundary samples
+        cover all trajectories is recorded in ``discretization_ok``.
     eps : float, optional
-        Radius of the excluded ball ``B_eps`` around the equilibrium (the
-        certificate cannot extend to the equilibrium itself). Default
-        ``R/100``.
+        Radius of the ball ``B_eps`` around the equilibrium that is excluded
+        from the certificate. Default ``R/100``.
     norm : {"2", "inf", "1"}
-        Working norm for ``V``.
+        Norm used for ``V``.
     tau : float
-        Recurrence horizon: trajectories may wander for up to ``tau`` time
-        units before ``V`` must have dipped. Larger tau never hurts the rate
-        but costs compute.
+        Recurrence horizon: the time within which ``V`` must return to a
+        smaller value. For a fixed ``L``, a longer horizon cannot lower the
+        certified rate; the cost grows in proportion to ``tau``.
     equilibrium : array_like, optional
-        Equilibrium ``x*`` if not the origin. The field is shifted
-        internally.
+        Equilibrium ``x*``, if it is not the origin.
     method : {"fused", "ladder"}
-        ``"fused"`` = Algorithm 1 at fixed horizon tau. ``"ladder"`` =
-        per-cube horizon escalation up to ``tau`` (cheaper at matched
-        accuracy; horizons ``tau/4, tau/2, tau``).
+        ``"fused"`` uses the horizon ``tau`` for every cube. ``"ladder"``
+        starts each cube at ``tau/4`` and extends it to ``tau/2`` and ``tau``
+        only for cubes that limit the rate, which is usually cheaper.
     L_method : {"auto", "corners", "evt"}
-        How the one-sided Lipschitz constant is estimated when ``L`` is not
-        supplied. ``"corners"`` evaluates the matrix measure at the box corners
-        -- exact only when the Jacobian is affine in the state (the paper's
-        bilinear systems), and an UNDER-estimate (unsound) for general
-        nonlinear fields. ``"evt"`` uses the extreme-value (reverse-Weibull)
-        estimator of Knuth et al. over interior samples, a high-probability
-        upper bound that is the sound choice for nonlinear fields. ``"auto"``
-        (default) picks ``"corners"`` only when an analytic ``jac`` is given
-        and passes a sampled affinity test, and ``"evt"`` otherwise. The
-        resolved choice and diagnostics live in ``report.lipschitz``
-        (``.method``, ``.evt`` with fitted ``gamma``, KS p-value, ``validated``).
+        How ``L`` is estimated when it is not given. ``"corners"`` evaluates
+        the matrix measure of the Jacobian at the corners of the box. This is
+        exact when the Jacobian is affine in the state and can underestimate
+        ``L`` otherwise. ``"evt"`` samples the matrix measure inside the box
+        and fits an extreme-value distribution to the sampled maxima (Knuth et
+        al.); the resulting bound holds with probability ``rho``. ``"auto"``
+        (default) uses ``"corners"`` when ``jac`` is given and passes a sampled
+        test of affinity, and ``"evt"`` otherwise. The choice and the fit
+        diagnostics are stored in ``report.lipschitz``.
     rho : float
-        Confidence level for ``L_method="evt"``: the estimated ``L``
-        over-estimates the true constant with probability ``rho`` (default
-        0.95). Higher ``rho`` -> larger, safer ``L`` (more conservative rate).
+        Probability with which the ``"evt"`` estimate exceeds the true
+        constant (default 0.95). A higher value gives a larger ``L`` and a
+        lower certified rate.
     delta : float
-        Relative sub-optimality target; refinement stops once the certified
-        rate is within ``delta`` of the data-driven ceiling.
+        Refinement stops once the certified rate is within this relative gap
+        of ``alpha_upper``, the rate certified at the cube centers.
     max_refine, max_seconds :
-        Refinement-round / wall-clock budgets (the result is an *anytime*
-        lower bound; stopping early is sound, just conservative).
+        Limits on refinement rounds and wall-clock time. The rate reported
+        when a limit is reached is valid, but may be lower than a longer run
+        would give.
     record_trace : bool
-        Record the anytime curve ``[(seconds, alpha, n_cubes), ...]``.
+        Record ``[(seconds, alpha, n_cubes), ...]`` after each refinement
+        round.
     **kwargs :
         Forwarded to the underlying
         :func:`pyddrv.verification.find_alpha_min_fused` /
@@ -307,9 +300,10 @@ def verify_stability(
                 lipschitz=est)
         if not est.discretization_ok:
             warnings.warn(
-                "estimate_L: discretization-robustness check (eq. 38) did not "
-                "pass at the densest boundary grid tried; the continuum "
-                "containment claim is unverified (report.certified is False).",
+                "The boundary trajectories used to estimate the reachable set "
+                "could not be shown to cover all trajectories from the box, even "
+                "on the finest boundary grid tried. The result is reported but "
+                "not certified (report.certified is False).",
                 stacklevel=2)
         L_val = est.L
     else:
@@ -346,14 +340,13 @@ def verify_stability(
 
 
 # --------------------------------------------------------------------------- #
-# region of attraction (Algorithm 2)
+# region of attraction
 # --------------------------------------------------------------------------- #
 @dataclass
 class RoAReport:
-    """Outcome of :func:`verify_roa`: a certified inner approximation of the
-    region of attraction as a union of cubes (centers/halfs in ORIGINAL
-    coordinates; subtract ``equilibrium`` to recover the internal shifted
-    frame)."""
+    """Result of :func:`verify_roa`: an inner approximation of the region of
+    attraction as a union of cubes, with centers ``centers`` and half-widths
+    ``halfs`` in the original coordinates."""
 
     alpha: float
     volume: float                   # total volume of the certified union
@@ -408,40 +401,40 @@ def verify_roa(
     rho: float = 0.95,
     **kwargs,
 ) -> RoAReport:
-    r"""Grow a certified inner approximation of the region of attraction.
+    r"""Certify an inner approximation of the region of attraction.
 
-    Every cube in the returned union satisfies the recurrence condition at
-    rate ``alpha`` (Theorem 8), so trajectories from the union converge to
-    ``B_eps`` around the equilibrium at rate ``alpha``.
+    Returns the cubes in ``Q_R`` for which the recurrence condition at rate
+    ``alpha`` is certified, given the bound ``L``. Requires the compiled
+    kernel: a field written with ``jax.numpy`` (install the ``jax`` extra), or
+    a PyTorch field with ``backend="torch"``.
 
-    Requires the fused JAX kernel (or ``backend="torch"`` with a torch
-    field); install the ``jax`` extra.
-
-    Parameters largely mirror :func:`verify_stability` (including
-    ``L_method``/``rho`` for the Lipschitz estimate). Extra knobs:
+    The parameters are those of :func:`verify_stability`, plus:
 
     trim : bool
-        Run the paper's two-pass protocol: pass 1 grows a tentative region
-        from the decay condition alone; pass 2 re-certifies it enforcing that
-        certifying trajectories remain inside the *grown region itself*
-        (checked against the exact union via a rasterized inner distance
-        map, ``raster_n`` cells per axis). Sound RoA claims with non-inf
-        working norms generally need this.
+        If false, a cube is accepted when the decay condition holds for the
+        whole cube. If true, a second pass also requires that, at the return
+        time, trajectories from the cube lie inside the region found in the
+        first pass. The second pass checks against the first-pass region, not
+        against its own result. The region is rasterized with ``raster_n``
+        cells per axis for this check.
     plateau_rel : float, optional
-        Stall-proof plateau stop (e.g. ``1e-3``): stop when certified volume
-        growth over the last time-doubling AND the expected one-split gain
-        still queued both fall below this fraction.
+        Stop when the certified volume has grown by less than this fraction
+        over the last doubling of the elapsed time, and the volume expected
+        from the cubes still queued is also below this fraction.
     spill_dir : str, optional
-        Stream certified cubes to disk (memmap-backed result) -- required
-        for very long runs where the union outgrows RAM.
+        Write certified cubes to files in this directory instead of keeping
+        them in memory. Needed for runs that certify more cubes than fit in
+        memory.
     **kwargs :
-        Large-run controls forwarded to
+        Options for long runs, passed to
         :func:`pyddrv.verification.find_alpha_roa_fused`: ``priority``
-        (``"gain"`` | ``"norm"`` | ``"sizedist"``), ``inner_first`` /
-        ``inner_first_min_h``, ``max_pending_parents`` (bounded frontier with
-        sound eviction), ``min_disk_gb`` / ``disk_check_every`` (disk guard
-        with ``spill_dir``), and ``local_jac`` / ``local_M`` (trajectory-local
-        contraction bound, torch backend). See that function's docstring.
+        (``"gain"``, ``"norm"`` or ``"sizedist"``), ``inner_first`` and
+        ``inner_first_min_h``, ``max_pending_parents`` (limits memory by
+        discarding the least promising cubes, which then remain uncertified),
+        ``min_disk_gb`` and ``disk_check_every`` (stop before the disk fills,
+        with ``spill_dir``), and ``local_jac`` and ``local_M`` (a bound on
+        trajectory separation computed along each trajectory, torch backend
+        only). See that function's docstring.
     """
     eps = _default_eps(R) if eps is None else float(eps)
     n_steps = _default_steps(tau) if n_steps is None else int(n_steps)

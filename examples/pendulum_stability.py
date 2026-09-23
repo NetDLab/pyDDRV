@@ -1,19 +1,17 @@
-"""Certify a decay rate for the damped pendulum — the minimal pipeline.
+"""Certified decay rate for a damped pendulum.
 
-The field is plain NumPy (np.sin does not trace under jit), so this exercises
-the automatic NumPy-kernel fallback: same certificate, no JAX required.
+The field is written with NumPy (np.sin), so the NumPy kernel is used and JAX is
+not needed.
 
-The pendulum's Jacobian [[0, 1], [-cos(theta), -1]] is NOT affine in the state,
-so the box-corner estimate of the one-sided Lipschitz constant L is not
-justified here (it happens to be correct only while the box stays inside
-|theta| < pi, where mu(dJ) is monotonic; enlarge R past pi and corners would
-miss the interior peak at theta=pi and under-estimate L -> an unsound
-certificate). We therefore estimate L with the extreme-value (reverse-Weibull)
-method L_method="evt", which samples the interior and returns a
-high-probability upper bound -- the principled choice for any nonlinear field.
+The Jacobian of the pendulum, [[0, 1], [-cos(theta), -1]], is not affine in the
+state, so evaluating its matrix measure at the corners of the box does not
+bound L in general: for boxes that contain theta = pi the maximum is inside
+the box. L is therefore estimated with the extreme-value method
+(L_method="evt"), which samples the inside of the box and gives a bound that
+holds with probability rho.
 
-Writes examples/output/pendulum_stability.npz (raw results) and, if
-matplotlib is available, a phase portrait with the verified box.
+Writes examples/output/pendulum_stability.npz and, if matplotlib is installed,
+figures of the certified box and the cubes used by the certificate.
 """
 import os
 
@@ -35,7 +33,7 @@ def main():
     print(report.summary())
     print(f"  L={report.L:.3f} over Q_{report.lipschitz.R_bar:.3f} "
           f"(worst excursion {report.lipschitz.R_max:.3f}), "
-          f"eq-(38) check: {report.discretization_ok}")
+          f"discretization check: {report.discretization_ok}")
     print(f"  L via EVT: {report.lipschitz.evt.summary()}")
 
     np.savez(os.path.join(OUT, "pendulum_stability.npz"),
@@ -61,7 +59,7 @@ def main():
     ax.figure.savefig(os.path.join(OUT, "pendulum_stability.png"), dpi=150)
     print(f"  figure -> {OUT}/pendulum_stability.png")
 
-    # (b) the same grid, cubes filled by their per-cube certified rate -- shows
+    # (b) the same grid, cubes filled by the rate each one certifies; shows
     #     which cubes (near the boundary) limit the global guarantee.
     ax2 = plot_stability_2d(report, show_grid=True, grid_color_by="alpha")
     ax2.set_xlabel(r"$\theta$"); ax2.set_ylabel(r"$\omega$")
@@ -70,7 +68,7 @@ def main():
     ax2.figure.savefig(os.path.join(OUT, "pendulum_grid.png"), dpi=150)
     print(f"  figure -> {OUT}/pendulum_grid.png")
 
-    # (c) cubes filled by their actual WIDTH (log scale) -- the layered grid
+    # (c) cubes filled by their width (log scale): the layered grid
     #     (coarse outside, finer near the origin) and adaptive refinement,
     #     sized directly.
     ax3 = plot_stability_2d(report, show_grid=True, grid_color_by="width")

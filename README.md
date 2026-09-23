@@ -1,167 +1,172 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/pyddrv-mark-dark.svg">
-    <img src="docs/assets/pyddrv-mark-light.svg" alt="pyDDRV logo: a trajectory that rises above, then recurrently returns below, a certified decay envelope over a layered verification grid" width="140">
+    <img src="docs/assets/pyddrv-mark-light.svg" alt="pyDDRV logo" width="140">
   </picture>
 </p>
 
-<h1 align="center">pyDDRV — Data-Driven Recurrence-based Verification</h1>
+<h1 align="center">pyDDRV: Data-Driven Recurrence-based Verification</h1>
 
 <p align="center">
   <a href="https://github.com/NetDLab/pyDDRV/actions/workflows/ci.yml"><img src="https://github.com/NetDLab/pyDDRV/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://arxiv.org/abs/2608.26447"><img src="https://img.shields.io/badge/arXiv-2608.26447-b31b1b.svg" alt="arXiv"></a>
 </p>
 
-Certify **exponential stability** and **regions of attraction** of a dynamical
-system **from sampled trajectories** — no Lyapunov function search, no model
-of the dynamics beyond a one-sided Lipschitz bound (which can itself be
-estimated from data).
+pyDDRV certifies exponential decay toward an equilibrium, down to a small ball
+around it, and computes inner approximations of regions of attraction. It uses
+simulated trajectories and implements the Recurrent Lyapunov Function (RLF)
+method of Siegelmann, Paganini and Mallada
+([arXiv:2608.26447](https://arxiv.org/abs/2608.26447)).
 
-pyDDRV implements verification via **Recurrent Lyapunov Functions (RLFs)**
-(Siegelmann, Paganini, Mallada): instead of constructing a Lyapunov
-function whose sublevel sets are invariant, take the plain norm
-`V(x) = ‖x − x*‖` and certify from trajectories that it is **τ-recurrent** —
-within a horizon `τ` it dips back below `e^{−ατ} V`. Recurrence permits
-excursions that invariance forbids, so the certificates are less conservative
-than classical (e.g. sum-of-squares) ones, and they come with an **anytime**
-guarantee: more compute never hurts, stopping early is sound.
+A classical Lyapunov certificate needs a function whose sublevel sets are
+invariant. An RLF only needs to be recurrent: from every initial condition, the
+function must return to a smaller value within a horizon `τ`, although it may
+increase in between. pyDDRV uses the plain norm `V(x) = ‖x − x*‖` as the RLF
+and checks the recurrence condition on trajectories, so no Lyapunov function has
+to be constructed.
 
-## Quick start
+The method is data-driven in the sense that the certificate is computed from
+trajectories rather than from an analysis of the equations. It is not
+model-free. pyDDRV simulates a vector field `f` that you provide, from initial
+conditions it chooses, and it needs an upper bound `L` on the one-sided
+Lipschitz constant of `f` over the states those trajectories visit. `L` can be
+given or estimated.
+
+## Example
 
 ```python
 import numpy as np
-from pyddrv import verify_stability
+from pyddrv import verify_stability, matrix_measure
 
-A = np.array([[0.0, 2.0], [-1.0, -1.0]])         # stable spiral
+A = np.array([[0.0, 2.0], [-1.0, -1.0]])
 
-def f(x):                                        # batched field (N,d) -> (N,d)
+def f(x):                      # batched vector field: (N, d) -> (N, d)
     return x @ A.T
 
-report = verify_stability(f, R=0.7, d=2, tau=3.0)
+report = verify_stability(f, R=0.7, d=2, tau=3.0, L=matrix_measure(A))
 print(report.summary())
-# certified: alpha >= 0.47 ... — a GUARANTEED exponential decay rate on Q_R
 ```
 
-`verify_stability` runs the full pipeline: it estimates the one-sided
-Lipschitz constant `L` from boundary trajectories (with a
-discretization-robustness check that lifts the sampled claim to the
-continuum), covers `Q_R \ B_ε` with an exponentially-efficient layered grid
-of cubes, certifies each cube from **one** trajectory (Theorem 8), and
-adaptively refines the cubes that limit the global rate.
+```
+verify_stability[2-norm, R=0.7, eps=0.007, tau=3]: certified: alpha >= 0.4500 (ceiling 0.4999, gap 10.0%) | L=0.207, 45720 cubes, 4 refinements, backend=numpy
+```
 
-Regions of attraction, at a target rate `alpha`:
+For a linear field the one-sided Lipschitz constant is the matrix measure of
+`A`, so `L` is exact here. The result certifies that every trajectory starting
+in the box `‖x‖∞ ≤ 0.7` satisfies `‖x(t)‖ ≤ C e^{−0.45 t} ‖x(0)‖`, with
+`C = e^{(0.45 + L)τ}`, until it enters the ball of radius `eps` around the
+equilibrium. The eigenvalues of `A` are `−0.5 ± 1.32i`, so no rate above 0.5
+is possible.
+
+Regions of attraction are computed for a given rate. For this function the
+field has to be written with `jax.numpy`:
 
 ```python
+import jax.numpy as jnp
 from pyddrv import verify_roa
 
-roa = verify_roa(f, R=np.pi, d=2, alpha=1.0, tau=1.9, trim=True)
-print(roa.summary())     # union of certified cubes: roa.centers, roa.halfs
+def pendulum(x):
+    return jnp.stack([x[:, 1], -jnp.sin(x[:, 0]) - x[:, 1]], axis=1)
+
+roa = verify_roa(pendulum, R=3.0, d=2, alpha=0.2, tau=5.0, L=0.62, trim=True)
+print(roa.summary())
 ```
 
-Non-origin equilibria are handled with `equilibrium=x_star`; results are
-reported in original coordinates.
+The result is a union of cubes (`roa.centers`, `roa.halfs`) covering 84% of the
+box, computed in about 3 seconds on a laptop CPU. The bound `L=0.62` holds for
+the pendulum everywhere; [GETTING_STARTED.md](GETTING_STARTED.md) shows how it
+is obtained.
 
-## What you provide
+## What the guarantee depends on
 
-- **A batched vector field** `f(X: (N,d)) -> (N,d)`. Written with
-  backend-agnostic ops (or `jax.numpy`) it runs on the fused, jitted JAX
-  kernel; a plain-NumPy field automatically uses the (identical, slower)
-  NumPy kernel. A torch field with `backend="torch"` runs on Apple-GPU/CUDA.
-- Optionally an **analytic Jacobian** (`jac=`) — makes the Lipschitz constant
-  exact for fields with state-affine Jacobians — or a precomputed **`L=`**
-  (closed-form bound, or `one_sided_lipschitz_from_data` from experimental
-  `(x, f(x))` samples).
+A certified rate is a lower bound under the following conditions.
 
-## What you get back
+- `L` bounds the one-sided Lipschitz constant of `f` over the reachable set.
+  This holds with certainty when `L` is given as a proven bound, as in both
+  examples above, or when an analytic Jacobian that is affine in the state is
+  supplied. When `L` is estimated for a general field, the default estimator
+  fits an extreme-value distribution to sampled values of the matrix measure,
+  and the bound holds with probability `rho` (0.95 by default).
+- When `L` is estimated, pyDDRV also checks that every trajectory from the box
+  stays inside the region over which `L` was estimated. The result is in
+  `report.discretization_ok`.
+- Trajectories are computed with a fixed-step RK4 integrator. Integration
+  error is not included in the certificate.
 
-A certificate, not a heuristic: every reported rate is a sound lower bound.
+`report.certified` is true only when a positive rate was found and the check
+above passed. If no rate is certified, nothing follows about the stability of
+the equilibrium.
 
-- `verify_stability` → `StabilityReport`: certified rate `alpha`, the
-  data-driven ceiling `alpha_upper`, the sub-optimality gap, the `L`
-  estimate, and the full anytime trace.
-- `verify_roa` → `RoAReport`: a union of certified cubes (an inner
-  RoA approximation), its volume, and per-cube refinement depths.
+## How it works
 
-## How it works (the 60-second version)
+For a point `x`, a single simulated trajectory gives a rate that holds for
+every point in a ball around `x`: the one-sided Lipschitz constant bounds how
+far neighbouring trajectories can separate. pyDDRV covers the box `Q_R` minus a
+small ball around the equilibrium with cubes that are coarse far from the
+equilibrium and finer near it, certifies each cube from the trajectory through
+its center, and splits the cubes that limit the overall rate. The certified
+rate is the minimum over cubes. Under the conditions above, each intermediate
+value is a valid lower bound, so a run can be stopped at any time. Refinement
+usually raises the rate toward `report.alpha_upper`, the rate certified at the
+cube centers alone.
 
-The ε-ERLF condition (paper eq. 24): for every `x` in `Q_R \ B_ε` there is a
-return time `t ∈ (0, τ]` with `e^{αt} ‖φ(t,x)‖ ≤ ‖x‖`. A single trajectory
-certifies a whole ball `B_r(x)` via **Theorem 8**, using the one-sided
-Lipschitz constant `L = sup μ(∂f/∂x)` (a matrix measure / log-norm) to bound
-neighbour drift. A layered grid — coarse far from the equilibrium,
-geometrically finer near it (`O(3^d log(R/ε))` cubes instead of a uniform
-`O((R/ε)^d)`) — turns ball certificates into set certificates, and adaptive
-`3^d` splitting concentrates compute where the rate is limited. Simulation
-and certification are fused in a jitted kernel (RK4 inside `lax.scan`,
-running-max over return times, tiled batches, `O(N·d)` memory — no stored
-trajectories), which is what makes hundreds of millions of cube certificates
-per run practical.
+Simulation and the certification test run in one compiled JAX kernel. A NumPy
+implementation gives the same results more slowly, and a PyTorch
+implementation targets Apple and NVIDIA GPUs.
 
-## Install
+## Installation
+
+Python 3.10 or later.
 
 ```bash
-pip install "pyddrv[jax] @ git+https://github.com/NetDLab/pyDDRV"   # recommended
-# or, for development:
+pip install "pyddrv[jax] @ git+https://github.com/NetDLab/pyDDRV"
+```
+
+The package and import name is `pyddrv`, in lowercase. Optional extras: `jax`
+(compiled CPU kernel, recommended), `jax-cuda` (NVIDIA GPUs), `torch` (PyTorch
+kernel), `viz` (plotting), `examples` (plotting and JupyterLab, for the
+notebooks), `sos` (sum-of-squares baseline, needs a MOSEK license), `dev`
+(tests).
+
+For development:
+
+```bash
 git clone https://github.com/NetDLab/pyDDRV && cd pyDDRV
-conda env create -f environment.yml && conda activate pyddrv        # numpy+scipy+jax
+conda env create -f environment.yml && conda activate pyddrv
 pip install -e ".[dev]"
 pytest
 ```
 
-The distribution and import name are lowercase: `pip install pyddrv`, `import pyddrv`.
+## Documentation
 
-Extras: `[jax]` fused CPU kernel (recommended), `[jax-cuda]` NVIDIA GPUs,
-`[torch]` Apple-MPS/CUDA kernel for very large RoA sweeps, `[viz]` the plotting
-helpers (matplotlib), `[examples]` everything to run the notebooks (matplotlib +
-JupyterLab), `[sos]` the model-based sum-of-squares comparison baseline, `[dev]`
-tests + plotting.
+- [GETTING_STARTED.md](GETTING_STARTED.md): installation, the bundled
+  examples and their expected output, using pyDDRV on your own system,
+  choosing `L` and `τ`, plotting, platforms.
+- `examples/`: four scripts (a pendulum, the bilinear benchmark from the paper,
+  and Kuramoto oscillators in two and three dimensions), and the same four as
+  notebooks in `examples/notebooks/`.
+- The docstrings of `verify_stability` and `verify_roa` in
+  `src/pyddrv/api.py` list every option.
 
-## Layout
+## Repository layout
 
 ```
 src/pyddrv/
-  api.py           verify_stability / verify_roa (start here)
-  verification/    the certifier: fused kernels (JAX/NumPy/torch), Theorem-8
-                   ball bounds, layered grid + 3^d splitting, Algorithms 1 & 2,
-                   one-sided Lipschitz estimation with eq-(38) robustness check
-  lipschitz.py     matrix measures / log-norms; L from data (Definition 2)
-  lipschitz_evt.py extreme-value (reverse-Weibull) L estimation, high-prob bound
-                   contraction.py: trajectory-local contraction bound (tighter than
-                   the global r e^{Lt} inflation; torch kernel in contraction_torch.py)
-  viz.py           plotting helpers (anytime curve, verified box, RoA cube map)
-  systems/         example dynamics (NumPy + JAX variants) and an RK4 sampler
-  data/            TrajectorySet container
-  baselines/       optional box-SoS comparison (SumOfSquares/PICOS)
-examples/          runnable demos (stability, anytime frontier, Kuramoto RoA)
-docs/assets/       logo (light and dark variants)
-tests/             pytest suite
+  api.py            verify_stability, verify_roa
+  verification/     kernels, cube grid and splitting, the two algorithms,
+                    reachable-set and Lipschitz estimation
+  lipschitz.py      matrix measures; Lipschitz constants from Jacobians or data
+  lipschitz_evt.py  extreme-value estimate of the one-sided Lipschitz constant
+  viz.py            plotting
+  systems/          example vector fields (NumPy and JAX)
+  baselines/        sum-of-squares comparison
+examples/           scripts and notebooks
+tests/              test suite
 ```
 
-## Examples
+## Citation
 
-```bash
-python examples/pendulum_stability.py     # NumPy field, full pipeline
-python examples/bilinear2d_stability.py   # JAX fast path + anytime trace
-python examples/kuramoto_roa.py           # region of attraction with Trim
-python examples/kuramoto_roa_3d.py        # 3-D RoA, visualized by 2-D slices
-```
+R. Siegelmann, F. Paganini, E. Mallada. Stability Analysis and Data-driven
+Verification via Recurrent Lyapunov Functions. arXiv:2608.26447, 2026.
 
-Each script writes its figures and raw results to `examples/output/`. The same
-walkthroughs as **notebooks** (explained step by step) are in
-`examples/notebooks/`.
-
-## Relationship to the paper
-
-This is the general-purpose successor to the (private) research code
-developed for the paper below; the certifier core (Theorem-8 kernel, layered
-grids, Algorithms 1–2, renewal-terminated discretization check) is identical
-to the version validated there, including reproduction of the paper's
-benchmark tables and figures.
-
-## Citing
-
-R. Siegelmann, F. Paganini, E. Mallada. *Stability Analysis and Data-driven
-Verification via Recurrent Lyapunov Functions.* arXiv:2608.26447, 2026.
-([arxiv.org/abs/2608.26447](https://arxiv.org/abs/2608.26447))
-
-See `CITATION.cff` for BibTeX-ready metadata.
+`CITATION.cff` has the metadata in machine-readable form.

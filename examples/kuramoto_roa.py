@@ -1,9 +1,9 @@
-"""Region of attraction of the synchronized state of 3 Kuramoto oscillators
-(reduced coordinates, d = 2), at target rate alpha = 1 — the paper's Fig. 3
-setting, with the two-pass Trim protocol.
+"""Region of attraction of synchrony for three Kuramoto oscillators.
 
-Writes examples/output/kuramoto_roa.npz (certified cubes) and a figure of the
-certified union colored by cube size. Requires the [jax] extra.
+In reduced coordinates the state has dimension 2. The target rate is 1 and the
+second pass is enabled (trim=True). Writes examples/output/kuramoto_roa.npz
+(the certified cubes) and a plot of the cubes colored by size. Requires the
+jax extra.
 """
 import os
 import time

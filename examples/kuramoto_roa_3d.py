@@ -1,17 +1,16 @@
-"""A 3-D region of attraction, visualized by 2-D slices (Kuramoto, n = 4).
+"""Region of attraction of synchrony for four Kuramoto oscillators, drawn as
+cross-sections.
 
-Same setting as kuramoto_roa.py but with four oscillators, so the reduced
-state is d = 3 and the certified set is a 3-D union of cubes. It cannot be
-plotted directly; ``pyddrv.viz.plot_roa_slice`` draws the exact cross-section
-of the union with an axis-aligned plane -- a cube appears iff the plane passes
-through it. Three slices at increasing ``phi_3`` show the basin deforming and
-shrinking away from the synchronized state.
+The settings follow kuramoto_roa.py. With four oscillators the reduced state
+has dimension 3, so the region found by the first pass is drawn with
+``pyddrv.viz.plot_roa_slice``, which shows the cubes that intersect an
+axis-aligned plane. Three planes at increasing ``phi_3`` are drawn.
 
-Notes: this run is pass 1 only (``trim=False``) -- fast and right for
-exploration; re-run with ``trim=True`` for a claimed result. A slice's 2-D
-area is NOT the region's volume; use ``roa.volume``.
+Only the first pass is run (``trim=False``) to keep the run short; use
+``trim=True`` for a result meant to be reported. The area of a cross-section is
+not the volume of the region, which is ``roa.volume``.
 
-Writes examples/output/kuramoto3d_slices.{npz,png}. Requires the [jax] extra.
+Writes examples/output/kuramoto3d_slices.{npz,png}. Requires the jax extra.
 """
 import os
 import time

@@ -1,381 +1,264 @@
-# Getting started / testing guide
+# Getting started
 
-A hands-on walkthrough for someone evaluating pyDDRV for the first time: install
-it, confirm it works, reproduce the bundled results, then point it at your own
-system. No prior knowledge of the codebase is assumed.
+The method is summarized in the [README](README.md) and described in the paper
+([arXiv:2608.26447](https://arxiv.org/abs/2608.26447)).
 
-For *what the method does* and the theory, see [`README.md`](README.md). This
-document is purely operational.
+## 1. Installation
 
----
-
-## 0. What you will be able to do
-
-- **Certify a decay rate** for a dynamical system: a guaranteed exponential
-  rate `alpha` such that `‖x(t)‖ ≤ C e^{-alpha t} ‖x(0)‖` on a box `Q_R`
-  around an equilibrium. (`verify_stability`)
-- **Certify a region of attraction**: a union of cubes from which trajectories
-  provably converge at a target rate. (`verify_roa`)
-
-Everything is computed **from simulated (or logged) trajectories** — you supply
-a vector field (or trajectory data), not a hand-crafted Lyapunov function.
-
----
-
-## 1. Install
-
-You need Python ≥ 3.10. Two supported paths:
-
-### Option A — quick, from GitHub (recommended for a tester)
+pyDDRV needs Python 3.10 or later. The `python3` that ships with macOS is
+usually 3.9, so use a Python from Homebrew, python.org or conda.
 
 ```bash
-python -m venv pyddrv-env && source pyddrv-env/bin/activate
+python3.12 -m venv pyddrv-env
+source pyddrv-env/bin/activate
 pip install "pyddrv[jax,dev] @ git+https://github.com/NetDLab/pyDDRV"
 ```
 
-`[jax]` pulls the fast fused kernel (CPU; still fast). `[dev]` adds pytest and
-matplotlib so you can run the test suite and the example figures.
+`jax` installs the compiled kernel and `dev` installs pytest and matplotlib.
+Without JAX, `verify_stability` still works, using a slower NumPy kernel that
+gives the same results; `verify_roa` then needs the PyTorch backend.
 
-### Option B — development clone (to read/modify the code)
+To work on the code itself, clone the repository instead:
 
 ```bash
 git clone https://github.com/NetDLab/pyDDRV && cd pyDDRV
-conda env create -f environment.yml     # creates the `pyddrv` env: numpy+scipy+jax
+conda env create -f environment.yml
 conda activate pyddrv
 pip install -e ".[dev]"
 ```
 
-### Minimal / no-JAX install
+## 2. Checking the installation
 
-The certifier runs on a pure-NumPy fallback with **identical certificates**
-(just slower, and `verify_roa` needs JAX or torch — see §5). If JAX is a
-problem on your platform:
-
-```bash
-pip install "pyddrv @ git+https://github.com/NetDLab/pyDDRV"   # numpy only
-```
-
-### Optional extras
-
-| Extra          | Enables                                                        |
-|----------------|---------------------------------------------------------------|
-| `[jax-cuda]`   | NVIDIA GPU (same code; ~20–50× on large runs)                 |
-| `[torch]`      | Apple-MPS / CUDA kernel for very large RoA sweeps             |
-| `[sos]`        | the sum-of-squares comparison baseline (needs a MOSEK license)|
-
----
-
-## 2. Sanity check: run the test suite
+From a clone of the repository:
 
 ```bash
 pytest -q
 ```
 
-Expected: **`116 passed`** on a full `[jax,sos]` install (one to three minutes; most of the
-time is the SoS baseline tests). On a **numpy-only** install you should see
-roughly **`73 passed, 7 skipped`** — the skips are the JAX/torch/SoS tests,
-which is correct and not a failure.
+All tests should pass. Tests for optional components that are not installed
+(JAX, PyTorch, the sum-of-squares baseline) are skipped. A full run takes one
+to three minutes, most of it in the sum-of-squares tests.
 
-> If pytest reports import errors about `pyddrv`, see Troubleshooting (§8):
-> almost always a stale editable install shadowing the source tree.
-
----
-
-## 3. Reproduce the bundled results
-
-Four runnable demos live in `examples/`. Each prints a one-line certificate
-and writes raw results + a figure to `examples/output/`.
+## 3. The examples
 
 ```bash
-python examples/pendulum_stability.py     # NumPy field, full pipeline, ~5 s
-python examples/bilinear2d_stability.py   # JAX fast path + anytime trace, ~2 s
-python examples/kuramoto_roa.py           # region of attraction with Trim, ~1–2 min
-python examples/kuramoto_roa_3d.py        # 3-D RoA + 2-D slices, ~1 min
+python examples/pendulum_stability.py
+python examples/bilinear2d_stability.py
+python examples/kuramoto_roa.py
+python examples/kuramoto_roa_3d.py
 ```
 
-**Expected output (numbers are stable to a few %; wall times are machine-dependent):**
+Each script prints its result and writes the raw data and figures to
+`examples/output/`. Results should match the table below to within a few
+percent. Times were measured on a laptop CPU.
 
-| Example        | Certified result                                  | Backend | Notes |
-|----------------|---------------------------------------------------|---------|-------|
-| `pendulum`     | `alpha >= 0.388` (ceiling 0.484), eq-(38) `True`  | numpy   | damped pendulum, `R=0.8`, `tau=6`; `L` via EVT (nonlinear Jacobian) |
-| `bilinear2d`   | `alpha >= 0.474` (ceiling 0.499), gap 5%          | jax     | paper eq. (39), `eta=0.3`, matches the paper's ~0.47 |
-| `kuramoto_roa` | certified 1-RoA ≈ **82% of Q_π**                  | jax     | the sync basin minus the two splay-corner basins |
-| `kuramoto_roa_3d` | certified 1-RoA ≈ **66% of Q_π** (d = 3, pass 1) | jax  | n = 4 oscillators; visualized via `plot_roa_slice` cross-sections |
+| Script | System | Result | Time |
+|---|---|---|---|
+| `pendulum_stability.py` | damped pendulum, `R = 0.8` | rate ≥ 0.388 | 5 s |
+| `bilinear2d_stability.py` | bilinear benchmark of the paper, `R = 0.7` | rate ≥ 0.474 | 2 s |
+| `kuramoto_roa.py` | 3 Kuramoto oscillators, rate 1 | 82% of the box | 10 s |
+| `kuramoto_roa_3d.py` | 4 Kuramoto oscillators, rate 1 | 66% of the box (first pass only) | 40 s |
 
-If you see certificates in these ballparks, the install is sound and the method
-is doing what the paper claims. `pendulum` runs on the NumPy fallback on
-purpose (its `np.sin` field does not JIT-trace), so it also confirms the no-JAX
-path.
-
-**Prefer notebooks?** The same walkthroughs, step by step with the
-reasoning inline, are in [`examples/notebooks/`](examples/notebooks). Install the
-`examples` extra (matplotlib + JupyterLab) and open one — see that folder's
-README:
+The pendulum example uses the NumPy kernel, the others the JAX kernel. The
+same four examples are available as notebooks in `examples/notebooks/`, with
+more explanation. To run them, install the `examples` extra, which adds
+JupyterLab:
 
 ```bash
 pip install "pyddrv[jax,examples] @ git+https://github.com/NetDLab/pyDDRV"
 jupyter lab
 ```
 
----
+## 4. Certifying a decay rate for your own system
 
-## 4. Verify your own system (stability)
-
-The whole API is two functions. Here is the complete recipe:
+You need a vector field that accepts a batch of states of shape `(N, d)` and
+returns the derivatives in the same shape. Writing it with `jax.numpy` lets
+pyDDRV use the compiled kernel. A field written with NumPy also works for
+`verify_stability`, more slowly.
 
 ```python
-import numpy as np
+import jax.numpy as jnp
 from pyddrv import verify_stability
 
-# 1. A BATCHED vector field: takes (N, d) states, returns (N, d) derivatives.
-#    (Batched so N trajectories integrate at once — this is required.)
-def f(x):
-    x1, x2 = x[:, 0], x[:, 1]
-    return np.stack([x2, -np.sin(x1) - x2], axis=1)   # e.g. a pendulum
+def pendulum(x):
+    theta, omega = x[:, 0], x[:, 1]
+    return jnp.stack([omega, -jnp.sin(theta) - omega], axis=1)
 
-# 2. Certify a rate on the box Q_R (inf-norm radius R) about the origin.
-report = verify_stability(f, R=0.8, d=2, tau=5.0)
-
+report = verify_stability(pendulum, R=0.8, d=2, tau=5.0)
 print(report.summary())
-print("certified:", report.certified)      # True / False
-print("rate alpha:", report.alpha)         # the guaranteed lower bound
 ```
 
-**Key arguments:**
+```
+verify_stability[2-norm, R=0.8, eps=0.008, tau=5]: certified: alpha >= 0.4349 (ceiling 0.4832, gap 10.0%) | L=0.0947, 30152 cubes, 4 refinements, backend=jax
+```
 
-| Arg           | Meaning                                                                 |
-|---------------|-------------------------------------------------------------------------|
-| `R`           | inf-norm radius of the verification box `Q_R` (required)                |
-| `d`           | state dimension (required)                                              |
-| `tau`         | recurrence horizon; larger never hurts the rate, costs compute (def 5)  |
-| `equilibrium` | pass `x_star` if the equilibrium is not the origin; results come back in original coordinates |
-| `norm`        | `"2"` (default), `"inf"`, or `"1"` — the norm used for `V(x)=‖x‖`       |
-| `eps`         | inner radius excluded around the equilibrium (default `R/100`)          |
-| `jac`         | optional analytic Jacobian `x->(d,d)`; makes `L` exact for nice fields  |
-| `L`           | pass a precomputed one-sided Lipschitz bound to skip estimation         |
-| `max_seconds` | wall-clock budget; the result is an *anytime* sound lower bound         |
-| `max_refine`  | max refinement rounds (default 12)                                     |
-| `delta`       | stop once the rate is within this relative gap of the ceiling (def 0.1) |
+`pendulum_stability.py` reports 0.388 for the same box because it uses
+`tau=6` and stops refining at a 20% gap to `alpha_upper` (`delta=0.2`) instead
+of the default 10%. Here `L` is estimated (section 5), so the rate holds with probability 0.95.
 
-**Writing the field so it uses the fast kernel.** If you write `f` with
-`jax.numpy` (or ops that trace under `jit`), the fused JAX kernel is selected
-automatically. A plain-NumPy field silently uses the NumPy kernel — same
-answer, slower. You do not choose the backend; it is probed. Force it with
-`backend="jax" | "numpy" | "torch"` if needed.
+The main arguments:
 
-### Choosing how the Lipschitz constant `L` is estimated
+| Argument | Meaning |
+|---|---|
+| `R` | half-width of the box `Q_R = {‖x − x*‖∞ ≤ R}` to certify |
+| `d` | state dimension |
+| `tau` | recurrence horizon (section 9) |
+| `equilibrium` | the equilibrium `x*`, if it is not the origin |
+| `norm` | norm used for `V(x) = ‖x − x*‖`: `"2"` (default), `"inf"` or `"1"` |
+| `eps` | radius of the ball around `x*` excluded from the certificate (default `R/100`) |
+| `L`, `jac`, `L_method` | how the Lipschitz constant is obtained (section 5) |
+| `max_seconds`, `max_refine` | time and refinement budgets |
+| `delta` | stop refining when the rate is within this relative gap of `alpha_upper` |
 
-The certificate rests on a one-sided Lipschitz constant `L = sup μ(∂f/∂x)` over
-the reachable set. **A too-small `L` makes the certificate unsound**, so how you
-get it matters. The default `L_method="auto"` makes the safe choice for you:
+The full list is in the docstring of `verify_stability`.
 
-- **You have a closed-form bound** → pass it as `L=...`. Rigorous, no sampling.
-  (Example: Kuramoto's `L ≤ 2k(n−1)/n`.)
-- **Otherwise `auto` decides per field.** If you pass an analytic `jac=` and it
-  passes a sampled affinity test (Jacobian affine in the state, e.g. the
-  bilinear systems), the box-corner estimate is used because it is *exact*
-  there. In every other case (no Jacobian, or a nonlinear one such as the
-  pendulum's `−cos θ`) it uses the extreme-value (reverse-Weibull) estimator of
-  Knuth et al., which samples `μ(∂f/∂x)` in the box *interior* and returns a
-  **high-probability upper bound** (confidence `rho`, default 0.95). Check what
-  was chosen in `report.lipschitz.method`; EVT diagnostics are in
-  `report.lipschitz.evt`.
+## 5. The Lipschitz constant
 
-  ```python
-  report = verify_stability(f, R=0.8, d=2, tau=5.0)          # auto
-  print(report.lipschitz.method, report.L)
-  print(report.lipschitz.evt.summary() if report.lipschitz.evt else "corners")
-  ```
-- **Forcing a method:** `L_method="evt"` or `"corners"`. Only force `corners`
-  for a state-affine Jacobian: on a general nonlinear field the true `sup μ` is
-  often in the box interior and corners can miss it (we measured 3–6× under-
-  estimates on pendulum-like fields), yielding an unsound `L`.
+The certificate uses an upper bound `L` on the one-sided Lipschitz constant of
+`f`, which for a smooth field is `sup μ(∂f/∂x)`, the largest matrix measure of
+the Jacobian, taken over the states that trajectories from `Q_R` visit. If `L`
+is too small the certificate is not valid. There are three options, from
+strongest to weakest.
 
-You can also estimate `L` straight from logged `(x, f(x))` data with no model:
-`pyddrv.evt_one_sided_lipschitz_from_data(states, derivatives, rho=0.95)`.
+1. Pass a bound you have derived, as `L=...`. For the pendulum above the
+   Jacobian is `[[0, 1], [−cos θ, −1]]`, whose 2-norm matrix measure never
+   exceeds `(√5 − 1)/2 ≈ 0.618`, so `L=0.62` is valid everywhere.
+2. Pass an analytic Jacobian as `jac=...`. pyDDRV first estimates a box that
+   contains the reachable set. If the Jacobian is affine in the state, as for
+   polynomial fields of degree two, its matrix measure is largest at a corner
+   of that box, and pyDDRV evaluates it exactly there.
+3. Otherwise, the default (`L_method="auto"`) samples the matrix measure
+   inside the box that contains the reachable set and fits an extreme-value
+   distribution to the sampled maxima, following Knuth et al. The resulting
+   bound holds with probability `rho` (0.95 by default) rather than with
+   certainty.
 
----
+`report.lipschitz.method` records which method was used, and
+`report.lipschitz.evt` holds the diagnostics of the extreme-value fit.
 
-## 5. Verify a region of attraction
+The extreme-value estimate can fail on large boxes. For the pendulum with
+`R = 3`, trajectories from the corners swing over the top, the reachable set is
+large, the sampled maxima all take the same value, and the fit breaks down: it
+returns an `L` in the millions and nothing is certified. With `L=0.62` the same
+call certifies 84% of the box. When a closed-form bound is available, use it.
+
+If you have measured states and derivatives but no model, the one-sided
+Lipschitz constant can be estimated from those samples with
+`pyddrv.evt_one_sided_lipschitz_from_data`. The estimate only covers the
+region where the samples lie, so they must cover the reachable set. This only
+provides `L`; the certificate itself still needs a simulator that pyDDRV can
+start from initial conditions of its choosing.
+
+## 6. Regions of attraction
+
+`verify_roa` takes a target rate `alpha` and returns the set of cubes in `Q_R`
+from which convergence at that rate is certified. It requires the compiled
+kernel, so the field must be written with `jax.numpy` (or with PyTorch, using
+`backend="torch"`).
 
 ```python
 from pyddrv import verify_roa
 
-roa = verify_roa(f, R=np.pi, d=2, alpha=1.0, tau=1.9, trim=True)
+roa = verify_roa(pendulum, R=3.0, d=2, alpha=0.2, tau=5.0, L=0.62, trim=True)
 print(roa.summary())
-# roa.centers (N,d), roa.halfs (N,) — the certified union of cubes
-# roa.volume — total certified volume
 ```
 
-- `alpha` is the **target** rate you demand (unlike `verify_stability`, which
-  *finds* the best rate).
-- `trim=True` runs the paper's two-pass protocol (grow, then re-certify that
-  trajectories stay inside the grown region). Sound RoA claims with the 2-norm
-  generally need it.
-- **`verify_roa` requires JAX** (or `backend="torch"` with a torch field). On a
-  numpy-only install it raises with a clear message; use the low-level
-  `pyddrv.verification.find_alpha_roa` for a slow pure-NumPy fallback.
-- **Large runs (`d ≥ 4`, long budgets).** `verify_roa` forwards a set of
-  controls to the grower that came out of the paper's dimension sweep:
-  `priority="norm"` grows inside-out, `inner_first=` makes the certified set
-  reach the target ball first, `max_pending_parents=` bounds RAM by evicting
-  the lowest-value frontier (sound: evicted cubes just stay uncertified), and
-  with `spill_dir=` a disk-headroom guard (`min_disk_gb=`) stops cleanly
-  instead of filling the disk. None are needed for 2-D/3-D runs.
+```
+verify_roa[alpha=0.2, 2-norm, R=3, tau=5]: 80727 cubes (22.1% of 365035 tested), volume 30.34 | L=0.62, Trim=True, stop=complete
+```
 
----
+The certified set is `roa.centers` and `roa.halfs` (cube centers and half
+widths) and its volume is `roa.volume`; here that is 84% of the box.
 
-## 6. Visualizing results
+With `trim=False`, a cube is accepted when the decay condition holds for the
+whole cube, which is checked with the trajectory through its center and the
+Lipschitz bound. With `trim=True`, a second pass also requires that, at the
+time the condition is met, the trajectories from the cube lie inside the region
+found in the first pass. The region returned by the second pass is therefore
+not checked against itself.
 
-Reusable plotting helpers live in `pyddrv.viz` (they take the report objects
-directly; matplotlib required — it is in the `[dev]` extra). Each returns a
-matplotlib `Axes` you can restyle.
+For long runs in higher dimensions, `verify_roa` accepts further options
+(`max_seconds`, `priority`, `inner_first`, `max_pending_parents`, `spill_dir`);
+they are documented in `pyddrv.verification.find_alpha_roa_fused`. None of them
+are needed for the examples here.
+
+## 7. Plotting
+
+The functions in `pyddrv.viz` take the report objects directly and return a
+matplotlib `Axes`. They need matplotlib (the `viz`, `examples` or `dev` extra).
 
 ```python
-from pyddrv.viz import plot_anytime, plot_stability_2d, plot_roa_2d
 import matplotlib.pyplot as plt
+from pyddrv.viz import plot_anytime, plot_stability_2d, plot_roa_2d
 
-# stability: the anytime certified-rate-vs-time curve (needs record_trace=True)
-rep = verify_stability(f, R=0.8, d=2, tau=5.0, record_trace=True)
-plot_anytime(rep)
-
-# stability: the verified box over a phase portrait of the field (2-D)
-plot_stability_2d(rep, f=f)
-# ...and the certified covering grid itself (the layered + adaptively-refined
-# cubes). "outline" draws the tiling over the flow; "alpha"/"width" fill cubes
-# by their per-cube certified rate / size:
-plot_stability_2d(rep, f=f, show_grid=True, grid_color_by="outline")
-plot_stability_2d(rep, show_grid=True, grid_color_by="alpha")
-
-# region of attraction: the certified cube union, colored by cube size (2-D)
-roa = verify_roa(f, R=np.pi, d=2, alpha=1.0, tau=1.9, trim=True)
-plot_roa_2d(roa, color_by="width")     # or color_by="depth"
-
-plt.show()   # or ax.figure.savefig("out.png", dpi=150)
+report = verify_stability(pendulum, R=0.8, d=2, tau=5.0, record_trace=True)
+plot_anytime(report)                     # certified rate against wall time
+plot_stability_2d(report, f=pendulum)    # the box over the phase portrait
+plot_stability_2d(report, show_grid=True, grid_color_by="alpha")
+plot_roa_2d(roa, color_by="width")       # the certified cubes
+plt.show()
 ```
 
-The three `examples/` scripts each use one of these helpers, so they double as
-worked usage. `plot_roa_2d` is 2-D only; for a higher-dimensional region use
-`plot_roa_slice(roa, dims=(0, 1), at=...)`, which draws the cubes intersecting
-an axis-aligned 2-D plane (default: through the equilibrium) — the same view
-the paper uses for its `d >= 3` Kuramoto regions.
+`plot_stability_2d` can draw the cubes used by the certificate as outlines over
+the flow (`grid_color_by="outline"`), or filled by their width (`"width"`) or
+by the rate each one certifies (`"alpha"`). For regions in more than two
+dimensions, `plot_roa_slice(roa, dims=(0, 1), at=...)` draws the cubes that
+intersect an axis-aligned plane.
 
-## 7. Reading a report
+## 8. Reading a report
 
-`verify_stability` returns a `StabilityReport`:
+`verify_stability` returns a `StabilityReport` with these fields:
 
-- **`.certified`** — `True` iff a positive rate was certified **and** the
-  discretization-robustness check passed. This is the headline boolean.
-- **`.alpha`** — the guaranteed rate (a sound *lower* bound). Report this.
-- **`.alpha_upper`** — the data-driven *ceiling*: the best rate the data could
-  support here. The gap `.alpha` → `.alpha_upper` is how much refinement might
-  still gain.
-- **`.discretization_ok`** — whether eq. (38) lifted the finite-sample claim to
-  the continuum. If `False`, the numbers are still informative but the formal
-  continuum guarantee is not established (a warning is emitted).
-- **`.L`, `.lipschitz`** — the one-sided Lipschitz constant used and the full
-  estimate (`R_bar`, `R_max`, ...).
-- **`.trace`** — with `record_trace=True`, the anytime curve
-  `[(seconds, alpha, n_cubes), ...]`.
+- `alpha`: the certified rate.
+- `alpha_upper`: the rate certified at the cube centers alone. Refinement can
+  bring `alpha` close to it but not above it. It is not a bound on the rate of
+  the system.
+- `certified`: true when `alpha > 0` and the discretization check passed.
+- `discretization_ok`: whether the boundary trajectories used to bound the
+  reachable set cover all trajectories from the box. If it is false, a warning
+  is issued and the result is not certified.
+- `L`, `lipschitz`: the Lipschitz constant and how it was obtained.
+- `trace`: with `record_trace=True`, the list `(seconds, alpha, n_cubes)` after
+  each refinement round.
 
-**Two things testers commonly misread:**
+If no positive rate is certified, try a smaller `R`, a longer `tau`, a larger
+time budget, or a tighter `L`. Failing to certify does not show that the
+equilibrium is unstable.
 
-1. **Not certified ≠ unstable.** A negative or `-inf` `alpha` means *this run*
-   could not certify a rate — not that the system diverges. Try a smaller `R`,
-   a larger `tau`, or a longer budget.
-2. The rate is deliberately **conservative**. `alpha` is a floor; the true rate
-   is between `alpha` and `alpha_upper`. Tightening `delta` and raising
-   `max_refine`/`max_seconds` pushes `alpha` toward the ceiling.
+## 9. Choosing `tau`
 
----
+`tau` is how long a trajectory may take to return to a smaller value of `V`.
+The certificate takes the best return time in `(0, tau]`, so for a fixed `L` a
+longer `tau` cannot lower the certified rate. When `L` is estimated, it is
+estimated for the chosen horizon and can grow if trajectories travel further,
+which can lower the rate. The cost grows in proportion to `tau`, since every
+trajectory is integrated over the whole horizon.
 
-## 8. Troubleshooting
+If `tau` is too short, trajectories that need longer to return certify nothing,
+and the rate is low or negative even for a stable system. A few characteristic
+time constants of the system are a reasonable start; the examples use 3 to 6.
+`method="ladder"` lets each cube start at `tau/4` and use the full horizon only
+when it limits the rate.
 
-- **`ImportError` / wrong version of `pyddrv` in pytest or examples.** A
-  previously `pip install -e`'d copy elsewhere can shadow this tree. Run from
-  the repo root; pytest is already configured with `pythonpath=["src"]`. For
-  the example scripts on a dev clone, `export PYTHONPATH=$PWD/src` before
-  running them so they pick up *this* source and not another editable install.
-- **`verify_roa` raises "needs the fused JAX kernel".** Install `[jax]`, or pass
-  a torch field with `backend="torch"`, or use the low-level NumPy fallback.
-- **SoS baseline tests/examples fail or hang.** The `[sos]` baseline uses MOSEK,
-  which needs a free academic license at `~/mosek/mosek.lic`. Without it, skip
-  the SoS parts — they are only the comparison baseline, not the certifier.
-- **GPU.** JAX on Apple Silicon is CPU-only here and is already fast. Real GPU
-  speedups come from `[jax-cuda]` on an NVIDIA machine (no code change) or the
-  `[torch]` MPS/CUDA kernel for very large RoA sweeps. Details in §9.
-- **VS Code (or another debugger) pauses on a JAX `TracerArrayConversionError`.**
-  Versions before 2026-08 probed `backend="auto"` by *attempting* `jax.jit` on
-  your field and catching the failure — correct, but a debugger set to break on
-  raised exceptions pauses on that internal, already-handled exception (the
-  pendulum example's `np.sin` field triggers it by design). Current versions
-  classify plain-NumPy fields without raising anything, so update if you see
-  this. If a debugger still pauses inside library code on a *caught* exception,
-  press Continue, or disable the "Raised Exceptions" breakpoint (VS Code:
-  Run and Debug panel → Breakpoints → uncheck "Raised Exceptions").
+## 10. Platforms and GPUs
 
----
+A GPU is not needed for the examples. The test suite runs on Linux (Python
+3.10 and 3.12) and Windows (Python 3.11) on every commit, with and without
+JAX.
 
-## 9. GPUs, Windows, and platforms
+On NVIDIA GPUs under Linux (or WSL2 on Windows), install the `jax-cuda` extra
+instead of `jax`; the same code then runs on the GPU. We have not benchmarked
+this configuration. JAX does not support CUDA on native Windows. There, and on
+Apple GPUs, the PyTorch kernel can be used: install the `torch` extra, write
+the field with PyTorch operations, and pass `backend="torch"`.
 
-**CPU is the default and is genuinely fast.** The fused JAX kernel on CPU
-certifies hundreds of thousands of cubes per second; every number in this
-guide was produced on a laptop CPU. Reach for a GPU only for very large
-region-of-attraction sweeps (high dimension / long budgets).
+## 11. Troubleshooting
 
-**NVIDIA GPU (Linux, or Windows via WSL2):**
-
-```bash
-pip install "pyddrv[jax-cuda] @ git+https://github.com/NetDLab/pyDDRV"
-python -c "import jax; print(jax.devices())"   # expect [CudaDevice(id=0)]
-```
-
-No code changes — the same field runs on the GPU. JAX does **not** support
-CUDA on native Windows; use WSL2 (Ubuntu) for the CUDA path there.
-
-**Native Windows or Apple-GPU:** use the torch kernel instead — install the
-`[torch]` extra (a CUDA build of torch on Windows, the default build on
-Apple Silicon), write the field with torch ops, and pass `backend="torch"`.
-Check the device with `python -c "import torch; print(torch.cuda.is_available())"`
-(or `torch.backends.mps.is_available()` on a Mac).
-
-**Windows status:** supported. CI runs the full test suite on
-`windows-latest` (Python 3.11, both the NumPy-only and JAX-CPU paths) on
-every push — the Actions tab is the live answer to "does it work on
-Windows". JAX ships CPU wheels for Windows; the NumPy fallback needs nothing
-platform-specific.
-
-## 10. FAQ: choosing `tau` (and what if it's too large?)
-
-`tau` is the recurrence horizon: how long a trajectory may wander before `V`
-must have dipped. What happens as you grow it:
-
-- **The certified rate never gets worse.** The certificate maximizes over
-  return times `t ∈ (0, tau]`, so a larger `tau` only widens the search
-  window. (`L` must be valid over the reachable set for the horizon you use —
-  the built-in estimator handles this, and the excursion radius typically
-  *saturates* once trajectories stop excursing, so `L` stops growing too.)
-- **You pay compute linearly.** Integration steps scale with `tau`
-  (`n_steps` defaults to `50·tau`), and with a fixed time budget an
-  oversized `tau` spends steps on horizons most cubes never need — the boxes
-  that certify in the first tenth of the horizon still integrate all of it.
-- So "too large" wastes time but does not break soundness or degrade the
-  rate. Practical recipe: start with `tau` ≈ a few characteristic periods of
-  the system (our examples use 3–6), check `report.suboptimality`, and only
-  raise `tau` if many cubes sit at negative/`-inf` rates (no return within
-  the horizon). If you want the horizon managed per-cube automatically, use
-  `method="ladder"`: cubes start at `tau/4` and escalate only when they
-  block the rate.
-- **Too small** is the direction that actually costs you: trajectories that
-  have not returned within `tau` certify nothing, so the rate collapses even
-  for stable systems.
-
-## Where to go next
-
-- `examples/` — copy the closest demo and swap in your field.
-- `src/pyddrv/api.py` — full docstrings for every `verify_stability` /
-  `verify_roa` argument.
-- `src/pyddrv/verification/` — the low-level building blocks (Theorem-8 ball
-  bounds, layered grid, Algorithms 1 & 2) if you want to go under the hood.
-</content>
-</invoke>
+- Import errors, or an old version of pyddrv being used: another editable
+  install may be shadowing this one. The tests use `src/` directly. For the
+  example scripts in a clone, set `PYTHONPATH=$PWD/src`.
+- `verify_roa` raises "needs the fused JAX kernel": the field is not written
+  with `jax.numpy`, or JAX is not installed.
+- The sum-of-squares tests fail or hang: that baseline uses MOSEK, which needs a
+  license file (free for academic use) at `~/mosek/mosek.lic`.
+- `L` in the thousands or more: see section 5.

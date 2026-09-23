@@ -1,45 +1,45 @@
 # Changelog
 
-All notable changes to pyDDRV are recorded here. Versions follow
+Changes to pyDDRV, by version. Versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## Unreleased
 
 ### Documentation
-- Project logo (light and dark variants, `docs/assets/`) in the README header,
-  switching with the viewer's GitHub theme.
-- Display name is now **pyDDRV**; the package and import name remain
-  `pyddrv`.
+- Logo in the README, with light and dark variants in `docs/assets/`.
+- The project is named pyDDRV and the repository is `NetDLab/pyDDRV`. The
+  package and import name remain `pyddrv`.
+- README, getting-started guide, notebooks and docstrings rewritten. They now
+  state that the method needs a simulator for the vector field, that estimated
+  Lipschitz constants give a guarantee that holds with probability `rho`, that
+  integration error is not included in the certificate, and that
+  `alpha_upper` is the rate certified at the cube centers of the current grid,
+  not a bound on the rate of the system. All code examples were checked to run.
 
-## [0.1.0] — 2026-09-17
+## [0.1.0](https://github.com/NetDLab/pyDDRV/releases/tag/v0.1.0) (2026-09-17)
 
 First public release.
 
 ### Certification
-- `verify_stability`: guaranteed exponential decay rate on a box `Q_R` from
-  simulated trajectories (Theorem-8 ball certificates, layered
-  `O(3^d log(R/ε))` covering grid, adaptive refinement, anytime lower bound).
-- `verify_roa`: certified inner approximation of a region of attraction at a
-  target rate, with the two-pass Trim protocol.
-- Fused JAX kernel (RK4 inside `lax.scan`, tiled, no stored trajectories);
-  identical NumPy fallback; torch backend for Apple-MPS / CUDA.
-- Trajectory-local contraction bound (`verification/contraction.py`) as a
-  tighter alternative to the global `r e^{Lt}` inflation (torch backend).
-- Large-run controls for the region-of-attraction grower: bounded frontier
-  with sound eviction, disk-headroom guard, inner-first seeding, frontier
-  priority modes, stall-proof plateau stop.
+- `verify_stability`: certified exponential decay rate on a box around an
+  equilibrium, computed from simulated trajectories with adaptive refinement of
+  a cube grid.
+- `verify_roa`: inner approximation of the region of attraction at a given
+  rate. With `trim=True`, a second pass also requires certifying trajectories
+  to stay inside the region found by the first pass.
+- Compiled JAX kernel, NumPy implementation with identical results, and a
+  PyTorch backend for Apple and NVIDIA GPUs.
+- Trajectory-local contraction bound (`verification/contraction.py`), which can
+  replace the global Lipschitz bound in the PyTorch backend.
+- Options for long region-of-attraction runs: frontier size limit, free-disk
+  check, priority orderings, a stopping rule for stalled progress.
 
 ### Lipschitz estimation
-- `L_method="auto"` (default): exact box-corner estimate when an analytic
-  Jacobian is state-affine, otherwise the extreme-value (reverse-Weibull)
-  high-probability upper bound of Knuth et al.; model-free variant from
-  `(x, f(x))` data.
+- `L_method="auto"` (default): box corners when the analytic Jacobian is affine
+  in the state, otherwise the extreme-value estimate of Knuth et al.
+- Estimation from measured states and derivatives.
 
-### Tooling
-- `pyddrv.viz`: anytime curves, verified box with the covering grid, RoA cube
-  maps, and 2-D slices of higher-dimensional regions.
-- Four runnable examples with matching notebooks; `GETTING_STARTED.md`.
-- Continuous integration on Linux (Python 3.10, 3.12) and Windows (3.11),
-  with and without JAX.
-
-[0.1.0]: https://github.com/NetDLab/pyDDRV/releases/tag/v0.1.0
+### Other
+- Plotting in `pyddrv.viz`.
+- Four examples with matching notebooks, and `GETTING_STARTED.md`.
+- Tests on Linux (Python 3.10, 3.12) and Windows (3.11), with and without JAX.

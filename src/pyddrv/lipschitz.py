@@ -1,18 +1,17 @@
-r"""One-sided Lipschitz (oL) constant estimation.
+r"""One-sided Lipschitz constants and matrix measures.
 
-The paper's verification machinery (Theorem 8) certifies a whole ball
-:math:`B_r(x)` from a single trajectory by bounding how fast nearby trajectories
-can diverge. That bound is the **one-sided Lipschitz constant** of the vector
-field over a set :math:`S` (Definition 2):
+pyDDRV certifies a whole ball :math:`B_r(x)` from the trajectory through its
+center by bounding how fast nearby trajectories can separate. The bound uses
+the one-sided Lipschitz constant of the vector field over a set :math:`S`:
 
 .. math::
 
     [f(y) - f(x);\, y - x] \;\le\; L_S\, \lVert y - x\rVert^2,
     \qquad \forall x, y \in S,
 
-where :math:`[\cdot;\cdot]` is the weak pairing of the working norm. For a
-:math:`C^1` field on a convex set this equals the supremum of the **logarithmic
-matrix measure** (a.k.a. matrix log-norm) of the Jacobian (eq. 3):
+where :math:`[\cdot;\cdot]` is the weak pairing of the norm. For a
+:math:`C^1` field on a convex set this equals the supremum of the logarithmic
+matrix measure (log-norm) of the Jacobian:
 
 .. math::
 
@@ -25,15 +24,16 @@ Matrix measures implemented (vector norm -> measure of :math:`A`):
 - ``"1"``   : :math:`\mu_1(A) = \max_j\big(a_{jj} + \sum_{i\ne j}|a_{ij}|\big)`
 - weighted Euclidean ``P`` (``P = Q^\top Q``): :math:`\mu_{2,P}(A)=\mu_2(Q A Q^{-1})`
 
-Two estimation routes are provided:
+Two estimators are provided:
 
-1. **Jacobian-based** (`one_sided_lipschitz`) -- the exact eq. (3) supremum over
-   a box, evaluated at the corners (exact when the Jacobian is affine in the
-   state, as in the paper's bilinear examples) or over a sample/grid.
-2. **Data-driven** (`one_sided_lipschitz_from_data`) -- Definition 2 directly,
-   from sampled ``(x, f(x))`` pairs, requiring no model. Useful when only
-   trajectory data is available; pairs of states are differenced to estimate the
-   weak-pairing ratio.
+1. `one_sided_lipschitz` takes the supremum of the matrix measure of the
+   Jacobian over a box, evaluated at the corners (exact when the Jacobian is
+   affine in the state) or on random or grid samples.
+2. `one_sided_lipschitz_from_data` uses the definition above on pairs of
+   sampled ``(x, f(x))`` values, for example derivatives estimated from
+   measured trajectories. It returns the largest sampled ratio, which is a
+   lower bound on the supremum; see :mod:`pyddrv.lipschitz_evt` for an
+   estimate that exceeds it with a given probability.
 """
 from __future__ import annotations
 
@@ -173,12 +173,12 @@ def one_sided_lipschitz_from_data(
     max_pairs: int = 200_000,
     seed: int = 0,
 ) -> float:
-    r"""Data-driven :math:`L` from sampled ``(x, f(x))`` pairs (Definition 2).
+    r""":math:`L` from sampled ``(x, f(x))`` pairs, using the definition directly.
 
     Estimates ``L = sup_{i != j} [f(x_i)-f(x_j); x_i-x_j] / ||x_i-x_j||^2`` using
     the Euclidean (optionally ``P``-weighted) weak pairing, i.e. the standard
-    inner product. No model is required -- ``derivatives`` may come from
-    finite-differencing trajectory data (see :func:`derivatives_from_trajectories`).
+    inner product. ``derivatives`` may come from finite differences of
+    trajectory data (see :func:`derivatives_from_trajectories`).
 
     For more than ``max_pairs`` candidate pairs a random subset is used; the
     result is then a lower bound on the true sup, so prefer dense local sampling.

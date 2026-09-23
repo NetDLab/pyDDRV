@@ -1,9 +1,9 @@
-"""The paper's 2D bilinear benchmark on the JAX fast path, with the anytime
-trace: the certified rate is a sound lower bound at EVERY point of the curve;
-more compute only tightens it toward the data-driven ceiling.
+"""Certified decay rate for the two-dimensional bilinear benchmark of the paper.
 
-Writes examples/output/bilinear2d_stability.npz and the anytime-curve figure.
-Requires the [jax] extra.
+Uses the JAX kernel and records the certified rate after each refinement round;
+each recorded value is a valid lower bound. Writes
+examples/output/bilinear2d_stability.npz and a plot of the rate against wall
+time. Requires the jax extra.
 """
 import os
 import time
@@ -18,7 +18,7 @@ os.makedirs(OUT, exist_ok=True)
 
 
 def main():
-    f, jac = bilinear_2d_jax(eta=0.3, seed=0)     # paper eq. (39)
+    f, jac = bilinear_2d_jax(eta=0.3, seed=0)     # bilinear benchmark of the paper
     R, d, tau = 0.7, 2, 5.0
 
     t0 = time.time()

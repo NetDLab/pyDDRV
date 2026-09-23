@@ -1,9 +1,10 @@
-"""pyDDRV -- Data-Driven Recurrence-based Verification.
+"""pyDDRV: Data-Driven Recurrence-based Verification.
 
-Certify stability properties of a dynamical system from sampled trajectories
-via Recurrent Lyapunov Functions (RLF), using the plain norm
-``V(x) = ||x - x*||``. No Lyapunov function search, no model of the dynamics
-beyond a one-sided Lipschitz bound (which can itself be estimated from data).
+Certifies exponential stability and regions of attraction of an equilibrium
+with recurrent Lyapunov functions, using the norm ``V(x) = ||x - x*||``. The
+certificate is computed from trajectories that pyDDRV simulates from a vector
+field supplied by the user, together with an upper bound on the one-sided
+Lipschitz constant of the field. No Lyapunov function has to be constructed.
 
 High-level entry points
 -----------------------
@@ -12,17 +13,16 @@ High-level entry points
 >>> def f(x):                          # batched field (N, d) -> (N, d)
 ...     return x @ np.array([[0., 2.], [-1., -1.]]).T
 >>> report = verify_stability(f, R=0.7, d=2, tau=3.0)
->>> report.certified, report.alpha    # guaranteed exponential rate over Q_R
+>>> report.certified, report.alpha    # certified exponential rate on Q_R
 (True, ...)
 
-:func:`verify_stability` certifies a decay rate over a box (Algorithm 1);
-:func:`verify_roa` grows a certified inner region-of-attraction estimate at a
-target rate (Algorithm 2). The building blocks (Theorem-8 ball certificates,
-layered grids, fused JAX/torch kernels, Lipschitz estimation) live in
-:mod:`pyddrv.verification` and :mod:`pyddrv.lipschitz`.
+:func:`verify_stability` certifies a decay rate on a box, and
+:func:`verify_roa` an inner approximation of the region of attraction at a
+given rate. The lower-level functions are in :mod:`pyddrv.verification` and
+:mod:`pyddrv.lipschitz`.
 
-Reference: R. Siegelmann, Y. Shen, F. Paganini, E. Mallada, "Stability Analysis
-and Data-driven Verification via Recurrent Lyapunov Functions."
+Reference: R. Siegelmann, F. Paganini, E. Mallada, "Stability Analysis and
+Data-driven Verification via Recurrent Lyapunov Functions," arXiv:2608.26447.
 """
 from __future__ import annotations
 

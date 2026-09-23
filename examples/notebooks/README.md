@@ -1,34 +1,28 @@
 # Example notebooks
 
-Interactive, explained versions of the scripts in `examples/`. Each notebook
-walks through one use case step by step, with the reasoning inline.
+The four scripts in `examples/`, as notebooks with more explanation.
 
-| Notebook | Covers |
-|----------|--------|
-| [`01_pendulum_stability.ipynb`](01_pendulum_stability.ipynb) | Minimal `verify_stability` pipeline; NumPy fallback; **EVT** Lipschitz estimation for a nonlinear field |
-| [`02_bilinear2d_stability.ipynb`](02_bilinear2d_stability.ipynb) | JAX fast path; analytic Jacobian; the **anytime** certified-rate frontier |
-| [`03_kuramoto_roa.ipynb`](03_kuramoto_roa.ipynb) | `verify_roa`; closed-form `L`; the two-pass **Trim** protocol; RoA cube-map plot |
-| [`04_kuramoto_roa_3d.ipynb`](04_kuramoto_roa_3d.ipynb) | a **3-D** certified region (n = 4 oscillators), visualized by exact 2-D cross-sections with `plot_roa_slice` |
+| Notebook | Content |
+|---|---|
+| [`01_pendulum_stability.ipynb`](01_pendulum_stability.ipynb) | `verify_stability` on a damped pendulum; NumPy kernel; extreme-value estimate of the Lipschitz constant |
+| [`02_bilinear2d_stability.ipynb`](02_bilinear2d_stability.ipynb) | the bilinear benchmark of the paper; JAX kernel; certified rate during refinement |
+| [`03_kuramoto_roa.ipynb`](03_kuramoto_roa.ipynb) | `verify_roa` for three Kuramoto oscillators, with a closed-form Lipschitz bound and `trim=True` |
+| [`04_kuramoto_roa_3d.ipynb`](04_kuramoto_roa_3d.ipynb) | four oscillators (a three-dimensional region), drawn as cross-sections with `plot_roa_slice` |
 
 ## Running them
 
-Use a clean Python **3.10+** environment (the macOS system `python3` is often
-3.9 — too old):
+Use Python 3.10 or later (the `python3` that ships with macOS is usually 3.9):
 
 ```bash
-python3.12 -m venv pyddrv-env && source pyddrv-env/bin/activate   # any 3.10+
+python3.12 -m venv pyddrv-env
+source pyddrv-env/bin/activate
 pip install "pyddrv[jax,examples] @ git+https://github.com/NetDLab/pyDDRV"
-jupyter lab                       # then open a notebook and "Run All"
+jupyter lab
 ```
 
-The `examples` extra pulls in matplotlib **and** JupyterLab, so that one line is
-everything you need. Launch `jupyter lab` from inside the activated environment
-so the notebook uses its kernel.
+The `examples` extra installs matplotlib and JupyterLab. Start `jupyter lab`
+from the activated environment so that the notebooks use it. In a clone of the
+repository, install with `pip install -e ".[jax,examples]"` instead.
 
-On a development checkout, install from the repo instead
-(`pip install -e ".[jax,examples]"`), or launch Jupyter with
-`PYTHONPATH=$PWD/src`.
-
-The notebooks ship **un-executed** (clean diffs); "Run All" regenerates every
-figure. `01` runs on the pure-NumPy path (no JAX needed); `02` and `03` use the
-JAX kernel.
+The notebooks are stored without output; run all cells to produce the results
+and figures. Notebook 01 runs without JAX; the others need it.

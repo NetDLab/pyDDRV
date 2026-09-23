@@ -1,35 +1,34 @@
 r"""Extreme-value-theory (EVT) estimation of Lipschitz / one-sided-Lipschitz
 constants with a high-probability upper bound.
 
-The default box-corner estimate in :mod:`pyddrv.lipschitz` is *exact* only when
-the Jacobian is affine in the state (then the matrix measure is convex and its
-supremum over a box is attained at a corner). For a general nonlinear field the
-corner max can **under**-estimate ``sup_x mu(df/dx)`` -- and an under-estimate of
-``L`` makes the Theorem-8 drift term ``r e^{Lt}`` too small, i.e. the certificate
-unsound. When no analytic Jacobian is available at all, the raw sample maximum of
-Definition-2 ratios is likewise only a *lower* bound on the true supremum.
+The box-corner estimate in :mod:`pyddrv.lipschitz` is exact only when the
+Jacobian is affine in the state: the matrix measure is then convex in the state
+and its supremum over a box is attained at a corner. For a general nonlinear
+field the corner maximum can underestimate ``sup_x mu(df/dx)``, and an
+underestimate of ``L`` makes the certificate invalid. The largest value in a
+sample is likewise only a lower bound on the supremum.
 
 This module implements the extreme-value approach of Knuth et al., "Planning with
 Learned Dynamics: Probabilistic Guarantees on Safety and Reachability via
-Lipschitz Constants" (arXiv:2010.08993, Alg. 1), which itself builds on Wood &
+Lipschitz Constants" (arXiv:2010.08993), which builds on Wood &
 Zhang, "Estimation of the Lipschitz constant of a function" (J. Global Optim.,
-1996). The supremum of a bounded quantity is estimated as the **upper endpoint**
+1996). The supremum of a bounded quantity is estimated as the upper endpoint
 ``gamma`` of a three-parameter reverse Weibull distribution fit to block maxima,
 returned with a confidence margin so that the estimate over-estimates the true
 constant with a user-chosen probability ``rho``.
 
-Method (Knuth Alg. 1)
----------------------
+Method
+------
 To bound ``L = sup_{z in Z} q(z)`` for a scalar quantity ``q``:
 
 1. For ``j = 1..n_blocks``: draw ``n_per_block`` i.i.d. samples of ``q`` and take
    the block maximum ``s_j = max_i q(z_{i,j})``.
 2. Fit a reverse Weibull (``scipy.stats.weibull_max``) to ``{s_j}`` by MLE,
    obtaining the location parameter ``gamma_hat`` (the distribution's upper
-   support limit -- the Lipschitz estimate) and its standard error ``xi``.
+   support limit, which is the Lipschitz estimate) and its standard error ``xi``.
 3. Validate the fit with a Kolmogorov-Smirnov goodness-of-fit test at
    significance ``0.05``.
-4. Report ``L_hat = gamma_hat + Phi^{-1}(rho) * xi`` -- an over-estimate of ``L``
+4. Report ``L_hat = gamma_hat + Phi^{-1}(rho) * xi``, an overestimate of ``L``
    with probability ``rho`` (asymptotically in ``n_per_block``, via
    Fisher-Tippett-Gnedenko).
 
@@ -37,9 +36,9 @@ The reverse Weibull is the *only* extreme-value class with support bounded above
 so a good fit is itself evidence that the underlying quantity is bounded (finite
 Lipschitz constant); a failed KS test is reported, not silently ignored.
 
-The confidence is **probabilistic** and asymptotic -- unlike the exact corner
-bound for affine Jacobians, this is a high-probability guarantee, which is the
-appropriate tool when no closed-form / affine structure is available.
+The guarantee is probabilistic and asymptotic, unlike the exact corner bound
+for affine Jacobians. It is meant for fields where no closed-form bound or
+affine structure is available.
 """
 from __future__ import annotations
 
@@ -153,8 +152,9 @@ def evt_sup_estimate(sampler: Callable[[int], np.ndarray], rho=0.95,
                      n_bootstrap=200, seed=0) -> EVTEstimate:
     r"""Estimate ``sup q`` from a ``sampler(n) -> (n,)`` of i.i.d. draws of ``q``.
 
-    Implements Knuth Alg. 1: block maxima -> reverse-Weibull MLE -> KS test ->
-    confidence-inflated location parameter. ``rho`` is the probability with which
+    Follows Knuth et al.: block maxima, maximum-likelihood fit of a reverse
+    Weibull distribution, Kolmogorov-Smirnov test, and the fitted endpoint
+    increased by a confidence margin. ``rho`` is the probability with which
     the returned ``L`` over-estimates the true supremum.
 
     Parameters
@@ -254,7 +254,7 @@ def evt_one_sided_lipschitz(f: Callable, center, half, norm="2", rho=0.95,
     Uses the analytic Jacobian ``jac`` if given, else a batched central-difference
     Jacobian of ``f``. The matrix measure ``mu`` is the one for ``norm`` (or the
     weighted-``P`` Euclidean measure). This is the recommended replacement for the
-    corner estimate when the Jacobian is **not** affine in the state.
+    corner estimate when the Jacobian is not affine in the state.
     """
     center = np.asarray(center, dtype=float).reshape(-1)
     half = np.broadcast_to(np.asarray(half, dtype=float), center.shape)
@@ -298,8 +298,9 @@ def evt_one_sided_lipschitz_from_data(states, derivatives, rho=0.95, P=None,
                                       significance=0.05, n_bootstrap=200,
                                       seed=0) -> EVTEstimate:
     r"""High-probability upper bound on the one-sided Lipschitz constant from
-    sampled ``(x, f(x))`` pairs -- the fully model-free path (Definition 2), with
-    Knuth's EVT extrapolation instead of the raw sample maximum.
+    sampled ``(x, f(x))`` pairs. Applies the extreme-value estimate to the
+    ratios used in the definition of the one-sided Lipschitz constant, instead
+    of taking the largest sampled ratio.
 
     Estimates ``sup_{x != y} <f(x)-f(y), x-y> / ||x-y||^2`` (the 2-norm / weighted
     weak pairing). ``derivatives`` may be finite-differenced from trajectories
