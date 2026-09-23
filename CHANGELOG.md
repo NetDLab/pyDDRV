@@ -6,6 +6,27 @@ Changes to pyDDRV, by version. Versions follow
 ## Unreleased
 
 ### Fixed
+- `verify_roa(trim=True)` ran one Trim pass against the first-pass region and
+  reported a smaller region that was never checked against itself, so a cube
+  could be certified by landing in the part that pass removed. For the linear
+  spiral `A = [[0, 2], [-1, -1]]` at `alpha = 1`, above the spectral abscissa
+  0.5, this kept a quarter of the box. The Trim pass is now repeated until it
+  changes nothing: every trajectory from the returned region lands, at its
+  return time, in the region or in `B_eps`, so it reaches `B_eps`.
+  - `B_eps` counts as a landing zone (`find_alpha_roa_fused(trim_eps_ball=True)`).
+    Without it no nonempty region passes its own check.
+  - `RoAReport.trim_passes`, `trim_converged` and `trim_history`;
+    `max_trim_passes` (default 30) bounds the loop, with a warning if reached.
+    `max_seconds` limits the first pass only.
+  - A warning when the raster (`raster_n`) is coarse relative to `eps`.
+- The region raster used by Trim ignored the edge of `Q_R` (cells there
+  overstated their distance to the outside, and a region filling the box got
+  no usable distances) and was sensitive to the float32 rounding of stored
+  cubes. Both are fixed.
+- The documented pendulum example certifies 82% of the box instead of 84%.
+  About 0.5% of the old region was not closed under its own returns. The
+  Kuramoto region of attraction (notebook 03) grows from 82.154% to 82.170%
+  of the box.
 - Extreme-value Lipschitz estimate on large boxes. For the damped pendulum
   written with `jax.numpy`, `verify_roa(..., R=3.0)` estimated `L = 1.78e6`
   and certified nothing; it now estimates `L = 0.6181` (exact value 0.618).
