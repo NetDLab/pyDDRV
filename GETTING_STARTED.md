@@ -1,6 +1,6 @@
 # Getting started / testing guide
 
-A hands-on walkthrough for someone evaluating pyddrv for the first time: install
+A hands-on walkthrough for someone evaluating pyDDRV for the first time: install
 it, confirm it works, reproduce the bundled results, then point it at your own
 system. No prior knowledge of the codebase is assumed.
 

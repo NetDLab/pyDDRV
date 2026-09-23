@@ -1,11 +1,11 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/pyddrv-mark-dark.svg">
-    <img src="docs/assets/pyddrv-mark-light.svg" alt="pyddrv logo: a trajectory that rises above, then recurrently returns below, a certified decay envelope over a layered verification grid" width="140">
+    <img src="docs/assets/pyddrv-mark-light.svg" alt="pyDDRV logo: a trajectory that rises above, then recurrently returns below, a certified decay envelope over a layered verification grid" width="140">
   </picture>
 </p>
 
-<h1 align="center">pyddrv — Data-Driven Recurrence-based Verification</h1>
+<h1 align="center">pyDDRV — Data-Driven Recurrence-based Verification</h1>
 
 <p align="center">
   <a href="https://github.com/NetDLab/pyddrv/actions/workflows/ci.yml"><img src="https://github.com/NetDLab/pyddrv/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -17,7 +17,7 @@ system **from sampled trajectories** — no Lyapunov function search, no model
 of the dynamics beyond a one-sided Lipschitz bound (which can itself be
 estimated from data).
 
-pyddrv implements verification via **Recurrent Lyapunov Functions (RLFs)**
+pyDDRV implements verification via **Recurrent Lyapunov Functions (RLFs)**
 (Siegelmann, Paganini, Mallada): instead of constructing a Lyapunov
 function whose sublevel sets are invariant, take the plain norm
 `V(x) = ‖x − x*‖` and certify from trajectories that it is **τ-recurrent** —
@@ -107,6 +107,8 @@ conda env create -f environment.yml && conda activate pyddrv        # numpy+scip
 pip install -e ".[dev]"
 pytest
 ```
+
+The distribution and import name are lowercase: `pip install pyddrv`, `import pyddrv`.
 
 Extras: `[jax]` fused CPU kernel (recommended), `[jax-cuda]` NVIDIA GPUs,
 `[torch]` Apple-MPS/CUDA kernel for very large RoA sweeps, `[viz]` the plotting

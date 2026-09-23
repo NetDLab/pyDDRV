@@ -1,4 +1,4 @@
-"""pyddrv -- Data-Driven Recurrence-based Verification.
+"""pyDDRV -- Data-Driven Recurrence-based Verification.
 
 Certify stability properties of a dynamical system from sampled trajectories
 via Recurrent Lyapunov Functions (RLF), using the plain norm

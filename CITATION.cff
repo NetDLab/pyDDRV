@@ -1,6 +1,6 @@
 cff-version: 1.2.0
-message: "If you use pyddrv in your research, please cite both the software and the paper below."
-title: "pyddrv: Data-Driven Recurrence-based Verification"
+message: "If you use pyDDRV in your research, please cite both the software and the paper below."
+title: "pyDDRV: Data-Driven Recurrence-based Verification"
 type: software
 authors:
   - family-names: Mallada

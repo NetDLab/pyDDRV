@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to pyddrv are recorded here. Versions follow
+All notable changes to pyDDRV are recorded here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
@@ -8,6 +8,8 @@ All notable changes to pyddrv are recorded here. Versions follow
 ### Documentation
 - Project logo (light and dark variants, `docs/assets/`) in the README header,
   switching with the viewer's GitHub theme.
+- Display name is now **pyDDRV**; the package and import name remain
+  `pyddrv`.
 
 ## [0.1.0] — 2026-09-17
 
