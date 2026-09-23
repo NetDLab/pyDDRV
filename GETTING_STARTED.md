@@ -172,10 +172,28 @@ widths) and its volume is `roa.volume`; here that is 84% of the box.
 
 With `trim=False`, a cube is accepted when the decay condition holds for the
 whole cube, which is checked with the trajectory through its center and the
-Lipschitz bound. With `trim=True`, a second pass also requires that, at the
-time the condition is met, the trajectories from the cube lie inside the region
-found in the first pass. The region returned by the second pass is therefore
-not checked against itself.
+Lipschitz bound: for some return time `t ≤ tau`, the norm of every trajectory
+from the cube has dropped by at least a factor `e^{−alpha t}`. This says
+nothing about where the trajectories go afterwards.
+
+With `trim=True`, the returned region is also closed under these returns: at
+the return time, the trajectories from each cube lie inside the returned region
+or inside the ball of radius `eps` around the equilibrium. Every trajectory
+starting in the region therefore reaches that ball, and its norm drops by at
+least `e^{−alpha t}` at each return. The ball has to count as a landing zone:
+a chain of returns that stayed in the region forever would shrink towards the
+equilibrium, but the region excludes a neighborhood of the equilibrium.
+
+`verify_roa` gets there by repeating a Trim pass, which checks each cube
+against the region from the previous pass and drops or splits the cubes that
+fail, until a pass changes nothing. `roa.trim_passes` is the number of passes,
+and `roa.trim_history` the cube count and volume after each. If
+`max_trim_passes` (default 30) is reached first, `roa.trim_converged` is false,
+a warning is issued, and the region is not certified against itself. The
+check uses a raster of the region with `raster_n` cells per axis, and the cells
+must be small compared to `eps`, since chains that end in the ball have to
+land on cells lying entirely inside it. `max_seconds` limits the first pass
+only.
 
 For long runs in higher dimensions, `verify_roa` accepts further options
 (`max_seconds`, `priority`, `inner_first`, `max_pending_parents`, `spill_dir`);
