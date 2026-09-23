@@ -72,8 +72,8 @@ roa = verify_roa(pendulum, R=3.0, d=2, alpha=0.2, tau=5.0, L=0.62, trim=True)
 print(roa.summary())
 ```
 
-The result is a union of cubes (`roa.centers`, `roa.halfs`) covering 84% of the
-box, computed in about 3 seconds on a laptop CPU. The bound `L=0.62` holds for
+The result is a union of cubes (`roa.centers`, `roa.halfs`) covering 82% of the
+box, computed in about 12 seconds on a laptop CPU. The bound `L=0.62` holds for
 the pendulum everywhere; [GETTING_STARTED.md](GETTING_STARTED.md) shows how it
 is obtained.
 

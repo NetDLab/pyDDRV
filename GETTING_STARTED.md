@@ -164,11 +164,11 @@ print(roa.summary())
 ```
 
 ```
-verify_roa[alpha=0.2, 2-norm, R=3, tau=5]: 80727 cubes (22.1% of 365035 tested), volume 30.34 | L=0.62, Trim=True, stop=complete
+verify_roa[alpha=0.2, 2-norm, R=3, tau=5]: 29582 cubes (4.8% of 614624 tested), volume 29.35 | L=0.62, Trim=True (fixed point after 15 passes), stop=complete
 ```
 
 The certified set is `roa.centers` and `roa.halfs` (cube centers and half
-widths) and its volume is `roa.volume`; here that is 84% of the box.
+widths) and its volume is `roa.volume`; here that is 82% of the box.
 
 With `trim=False`, a cube is accepted when the decay condition holds for the
 whole cube, which is checked with the trajectory through its center and the
