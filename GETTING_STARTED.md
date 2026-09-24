@@ -136,11 +136,25 @@ strongest to weakest.
 `report.lipschitz.method` records which method was used, and
 `report.lipschitz.evt` holds the diagnostics of the extreme-value fit.
 
-The extreme-value estimate can fail on large boxes. For the pendulum with
-`R = 3`, trajectories from the corners swing over the top, the reachable set is
-large, the sampled maxima all take the same value, and the fit breaks down: it
-returns an `L` in the millions and nothing is certified. With `L=0.62` the same
-call certifies 84% of the box. When a closed-form bound is available, use it.
+Without `jac`, the Jacobian is computed by finite differences with a step
+suited to the precision of `f`. A field written with `jax.numpy` computes in
+single precision. The error of each sampled value is estimated, reported as
+`report.lipschitz.evt.resolution`, and added to `L`.
+
+The extreme-value fit needs the sampled maxima to vary, and on large boxes they
+may not. For the pendulum with `R = 3`, trajectories from the corners swing
+over the top, the box that contains the reachable set includes the states where
+the matrix measure is largest, and almost every block of samples reaches the
+same value. When the fit is ill-posed in this way, or the Kolmogorov-Smirnov
+test rejects it, pyDDRV reports the largest sampled value plus a margin taken
+from the spread of the sampled maxima. `report.lipschitz.evt.status` is then
+`"fallback"` instead of `"fit"`, and `report.lipschitz.evt.reason` says why.
+The margin keeps the probability `rho` under the extreme-value model for every
+shape of the distribution that the state dimension allows, without estimating
+its parameters. It still relies on that model, which the data did not
+confirm. For the pendulum with `R = 3` the default gives `L = 0.6181` and
+certifies the same region as `L=0.62`, 82% of the box. When a closed-form
+bound is available, use it.
 
 If you have measured states and derivatives but no model, the one-sided
 Lipschitz constant can be estimated from those samples with
@@ -164,18 +178,36 @@ print(roa.summary())
 ```
 
 ```
-verify_roa[alpha=0.2, 2-norm, R=3, tau=5]: 80727 cubes (22.1% of 365035 tested), volume 30.34 | L=0.62, Trim=True, stop=complete
+verify_roa[alpha=0.2, 2-norm, R=3, tau=5]: 29582 cubes (4.8% of 614624 tested), volume 29.35 | L=0.62, Trim=True (fixed point after 15 passes), stop=complete
 ```
 
 The certified set is `roa.centers` and `roa.halfs` (cube centers and half
-widths) and its volume is `roa.volume`; here that is 84% of the box.
+widths) and its volume is `roa.volume`; here that is 82% of the box.
 
 With `trim=False`, a cube is accepted when the decay condition holds for the
 whole cube, which is checked with the trajectory through its center and the
-Lipschitz bound. With `trim=True`, a second pass also requires that, at the
-time the condition is met, the trajectories from the cube lie inside the region
-found in the first pass. The region returned by the second pass is therefore
-not checked against itself.
+Lipschitz bound: for some return time `t ≤ tau`, the norm of every trajectory
+from the cube has dropped by at least a factor `e^{−alpha t}`. This says
+nothing about where the trajectories go afterwards.
+
+With `trim=True`, the returned region is also closed under these returns: at
+the return time, the trajectories from each cube lie inside the returned region
+or inside the ball of radius `eps` around the equilibrium. Every trajectory
+starting in the region therefore reaches that ball, and its norm drops by at
+least `e^{−alpha t}` at each return. The ball has to count as a landing zone:
+a chain of returns that stayed in the region forever would shrink towards the
+equilibrium, but the region excludes a neighborhood of the equilibrium.
+
+`verify_roa` gets there by repeating a Trim pass, which checks each cube
+against the region from the previous pass and drops or splits the cubes that
+fail, until a pass changes nothing. `roa.trim_passes` is the number of passes,
+and `roa.trim_history` the cube count and volume after each. If
+`max_trim_passes` (default 30) is reached first, `roa.trim_converged` is false,
+a warning is issued, and the region is not certified against itself. The
+check uses a raster of the region with `raster_n` cells per axis, and the cells
+must be small compared to `eps`, since chains that end in the ball have to
+land on cells lying entirely inside it. `max_seconds` limits the first pass
+only.
 
 For long runs in higher dimensions, `verify_roa` accepts further options
 (`max_seconds`, `priority`, `inner_first`, `max_pending_parents`, `spill_dir`);

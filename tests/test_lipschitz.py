@@ -43,6 +43,20 @@ def test_numerical_jacobian_of_linear_field():
     np.testing.assert_allclose(J, A_SPIRAL, atol=1e-5)
 
 
+def test_numerical_jacobian_of_float32_field():
+    # A field computed in float32 (as jax.numpy does by default): a fixed step
+    # of 1e-6 gives errors near 0.05; the step follows the precision of f.
+    def f(x):
+        x = np.asarray(x).astype(np.float32)
+        return np.stack([x[:, 1], -np.sin(x[:, 0]) - x[:, 1]], axis=1)
+
+    for x in ([3.1, -0.4], [6.9, 2.0], [0.2, -7.0]):
+        exact = np.array([[0.0, 1.0], [-np.cos(x[0]), -1.0]])
+        np.testing.assert_allclose(numerical_jacobian(f, x), exact, atol=5e-4)
+    assert np.max(np.abs(numerical_jacobian(f, [6.9, 2.0], eps=1e-6)
+                         - np.array([[0.0, 1.0], [-np.cos(6.9), -1.0]]))) > 1e-3
+
+
 @pytest.mark.parametrize("norm", ["2", "inf", "1"])
 @pytest.mark.parametrize("method", ["corners", "random", "grid"])
 def test_linear_oL_equals_matrix_measure(norm, method):
