@@ -1,11 +1,11 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/pyddrv-mark-dark.svg">
-    <img src="docs/assets/pyddrv-mark-light.svg" alt="pyDDRV logo" width="140">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/pyddrv-lockup-dark.svg">
+    <img src="docs/assets/pyddrv-lockup-light.svg" alt="pyDDRV" width="380">
   </picture>
 </p>
 
-<h1 align="center">pyDDRV: Data-Driven Recurrence-based Verification</h1>
+<h3 align="center">Data-Driven Recurrence-based Verification</h3>
 
 <p align="center">
   <a href="https://github.com/NetDLab/pyDDRV/actions/workflows/ci.yml"><img src="https://github.com/NetDLab/pyDDRV/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
