@@ -3,7 +3,7 @@
 Changes to pyDDRV, by version. Versions follow
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## [0.1.1](https://github.com/NetDLab/pyDDRV/releases/tag/v0.1.1) (2026-09-26)
 
 ### Fixed
 - `verify_roa(trim=True)` ran one Trim pass against the first-pass region and
@@ -44,7 +44,8 @@ Changes to pyDDRV, by version. Versions follow
     (`status == "fit"`) report `gamma + Phi^{-1}(rho) * se` as before.
 
 ### Documentation
-- Logo in the README, with light and dark variants in `docs/assets/`.
+- Logo and wordmark in the README header, with light and dark variants in
+  `docs/assets/`.
 - The project is named pyDDRV and the repository is `NetDLab/pyDDRV`. The
   package and import name remain `pyddrv`.
 - README, getting-started guide, notebooks and docstrings rewritten. They now

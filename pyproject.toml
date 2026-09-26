@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyddrv"
-version = "0.1.0"
+version = "0.1.1"
 description = "Data-Driven Recurrence-based Verification: certify stability and regions of attraction from sampled trajectory data via Recurrent Lyapunov Functions."
 readme = "README.md"
 requires-python = ">=3.10"
