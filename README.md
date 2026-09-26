@@ -73,7 +73,7 @@ print(roa.summary())
 ```
 
 The result is a union of cubes (`roa.centers`, `roa.halfs`) covering 82% of the
-box, computed in about 12 seconds on a laptop CPU. The bound `L=0.62` holds for
+box, computed in about 15 seconds on a laptop CPU. The bound `L=0.62` holds for
 the pendulum everywhere; [GETTING_STARTED.md](GETTING_STARTED.md) shows how it
 is obtained.
 

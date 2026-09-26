@@ -89,7 +89,7 @@ print(report.summary())
 ```
 
 ```
-verify_stability[2-norm, R=0.8, eps=0.008, tau=5]: certified: alpha >= 0.4349 (ceiling 0.4832, gap 10.0%) | L=0.0947, 30152 cubes, 4 refinements, backend=jax
+verify_stability[2-norm, R=0.8, eps=0.008, tau=5]: certified: alpha >= 0.4348 (ceiling 0.4832, gap 10.0%) | L=0.0692, 26328 cubes, 4 refinements, backend=jax
 ```
 
 `pendulum_stability.py` reports 0.388 for the same box because it uses
