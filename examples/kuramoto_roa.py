@@ -1,7 +1,8 @@
 """Region of attraction of synchrony for three Kuramoto oscillators.
 
 In reduced coordinates the state has dimension 2. The target rate is 1 and the
-second pass is enabled (trim=True). Writes examples/output/kuramoto_roa.npz
+Trim passes are enabled (trim=True), so the region is closed under the returns
+that certify it. Writes examples/output/kuramoto_roa.npz
 (the certified cubes) and a plot of the cubes colored by size. Requires the
 jax extra.
 """

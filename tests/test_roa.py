@@ -148,3 +148,37 @@ def test_roa_fused_matches_materialized_linear():
                                  tau=tau, n_steps=200, max_refine=m)
     assert r_new.n_certified == r_old.n_certified
     assert r_new.n_tested == r_old.n_tested
+
+
+def test_region_distance_map_edge_of_box_is_outside():
+    """Points beyond [-R, R]^d are outside the region: a region covering the
+    whole box has distance 0 on the edge cells and grows inward, instead of
+    the array edge being ignored (which overstated distances near the edge
+    and gave no finite distances at all for a full box)."""
+    n = 9
+    dmap, lo, cellw = region_distance_map(np.zeros((1, 2)), np.array([1.0]),
+                                          1.0, n)
+    assert np.all(dmap[0, :] == 0.0) and np.all(dmap[:, -1] == 0.0)
+    assert dmap[n // 2, n // 2] == pytest.approx((n // 2) * cellw)
+    # every reported distance fits inside the box
+    idx = np.arange(n)
+    cell_far = np.maximum(np.abs(lo + idx * cellw), np.abs(lo + (idx + 1) * cellw))
+    far = np.maximum(cell_far[:, None], cell_far[None, :])
+    assert np.all(far + dmap <= 1.0 + 1e-12)
+
+
+@pytest.mark.parametrize("norm", ["2", "inf", "1"])
+def test_region_distance_map_eps_ball_is_sound(norm):
+    """With ball=(eps, norm) the target ball joins the region; every cell's
+    reported inf-norm clearance stays inside the ball."""
+    n, rad = 81, 0.5
+    dmap, lo, cellw = region_distance_map(np.empty((0, 2)), np.empty(0), 1.0,
+                                          n, ball=(rad, norm))
+    assert dmap.max() > 0.2
+    idx = np.arange(n)
+    cell_far = np.maximum(np.abs(lo + idx * cellw), np.abs(lo + (idx + 1) * cellw))
+    # farthest point of the cell grown by its clearance, per axis
+    gx = cell_far[:, None] + dmap
+    gy = cell_far[None, :] + dmap
+    val = {"2": np.hypot(gx, gy), "inf": np.maximum(gx, gy), "1": gx + gy}[norm]
+    assert np.all(val[dmap > 0] <= rad + 1e-12)

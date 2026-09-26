@@ -16,6 +16,7 @@ from pyddrv import (
     verify_stability,
 )
 from pyddrv.systems import damped_pendulum, linear
+from pyddrv.verification import find_alpha_roa_fused
 
 A_SPIRAL = np.array([[0.0, 2.0], [-1.0, -1.0]])   # eigenvalues -0.5 +/- 1.32j
 
@@ -129,3 +130,107 @@ def test_verify_roa_linear(trim):
     assert np.all(np.abs(rep.centers) + rep.halfs[:, None] <= 1.0 + 1e-6)
     assert rep.trim == trim
     assert "verify_roa" in rep.summary()
+
+
+# --------------------------------------------------------------------------- #
+# Trim: the reported region is a fixed point of the Trim pass
+# --------------------------------------------------------------------------- #
+L_SPIRAL = float(np.max(np.linalg.eigvalsh((A_SPIRAL + A_SPIRAL.T) / 2)))
+
+
+def _spiral_roa(alpha, tau, **kw):
+    pytest.importorskip("jax", reason="verify_roa needs the JAX kernel")
+    kw.setdefault("max_refine", 3)
+    return verify_roa(linear(A_SPIRAL), R=np.pi, d=2, alpha=alpha, tau=tau,
+                      L=L_SPIRAL, trim=True, raster_n=729, **kw)
+
+
+def _closure_failures(rep, n_points=400, seed=0):
+    """Sample points of the region by volume and count those with no return
+    time t <= tau at which e^{alpha t} ||phi|| <= ||x|| and phi lies in the
+    region or in B_eps (2-norm, RK4 with the verifier's step)."""
+    rng = np.random.default_rng(seed)
+    C, H = np.asarray(rep.centers, float), np.asarray(rep.halfs, float)
+    w = H ** 2 / np.sum(H ** 2)
+    i = rng.choice(len(C), n_points, p=w)
+    X = C[i] + H[i, None] * rng.uniform(-1.0, 1.0, (n_points, 2))
+
+    def member(P):
+        inside = np.linalg.norm(P, axis=1) <= rep.eps
+        for c, h in zip(C, H):
+            inside |= np.all(np.abs(P - c) <= h, axis=1)
+        return inside
+
+    n_steps = max(120, int(round(50.0 * rep.tau)))
+    dt = rep.tau / n_steps
+    x, V0 = X.copy(), np.linalg.norm(X, axis=1)
+    ok = np.zeros(n_points, bool)
+    for k in range(1, n_steps + 1):
+        k1 = x @ A_SPIRAL.T
+        k2 = (x + 0.5 * dt * k1) @ A_SPIRAL.T
+        k3 = (x + 0.5 * dt * k2) @ A_SPIRAL.T
+        k4 = (x + dt * k3) @ A_SPIRAL.T
+        x = x + dt / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
+        cand = ~ok & (np.exp(rep.alpha * k * dt) * np.linalg.norm(x, axis=1)
+                      <= V0)
+        if cand.any():
+            ok[np.flatnonzero(cand)[member(x[cand])]] = True
+    return int(np.sum(~ok))
+
+
+def test_verify_roa_trim_fixed_point_keeps_achievable_rate():
+    """alpha = 0.3 is below the spectral abscissa 0.5: the fixed point keeps
+    almost all of the box and every cube certifies against the region itself."""
+    rep = _spiral_roa(0.3, 3.0)
+    assert rep.trim_converged
+    assert rep.trim_passes >= 1
+    assert rep.volume >= 0.99 * (2 * np.pi) ** 2
+    assert rep.trim_history[-1] == (rep.n_certified, pytest.approx(rep.volume))
+    # one more pass against the reported region changes nothing
+    again = find_alpha_roa_fused(
+        linear(A_SPIRAL), L_SPIRAL, np.pi, rep.eps, 2, 0.3, norm="2", tau=3.0,
+        n_steps=150, max_refine=3,
+        trim_region=(rep.centers, rep.halfs),
+        grid0=(rep.centers, rep.halfs, rep.depths), raster_n=729)
+    assert again.n_tested == again.n_certified == rep.n_certified
+    assert _closure_failures(rep) == 0
+    assert "fixed point" in rep.summary()
+
+
+def test_verify_roa_trim_unachievable_rate_certifies_only_near_eps():
+    """alpha = 1 exceeds the spectral abscissa 0.5, so no chain of returns
+    can keep that rate for long: only cubes next to B_eps, whose chains end
+    there after a return or two, may be certified. A single Trim pass against
+    the first-pass region used to keep about a quarter of the box."""
+    rep = _spiral_roa(1.0, 1.9, max_refine=4)
+    assert rep.trim_converged
+    assert rep.trim_history[0][1] > 0.2 * (2 * np.pi) ** 2   # first pass
+    assert rep.volume < 1e-4 * (2 * np.pi) ** 2
+    if rep.n_certified:
+        outer = np.linalg.norm(rep.centers, axis=1) + np.sqrt(2) * rep.halfs
+        assert outer.max() <= 3.0 * rep.eps
+        assert _closure_failures(rep) == 0
+
+
+def test_verify_roa_trim_without_eps_ball_is_empty():
+    """If chains may not end in B_eps, the norm of a chain decays
+    geometrically while every cube stays outside the excluded hole, so no
+    nonempty region is a fixed point."""
+    rep = _spiral_roa(1.0, 1.9, trim_eps_ball=False)
+    assert rep.trim_converged
+    assert rep.n_certified == 0
+
+
+def test_verify_roa_trim_pass_limit_is_reported():
+    with pytest.warns(UserWarning, match="fixed point"):
+        rep = _spiral_roa(1.0, 1.9, max_refine=4, max_trim_passes=1)
+    assert rep.trim_passes == 1
+    assert not rep.trim_converged
+    assert "NOT a fixed point" in rep.summary()
+
+
+def test_verify_roa_warns_on_coarse_raster():
+    pytest.importorskip("jax", reason="verify_roa needs the JAX kernel")
+    with pytest.warns(UserWarning, match="raster_n"):
+        verify_roa(linear(A_SPIRAL), R=np.pi, d=2, alpha=0.3, tau=3.0,
+                   L=L_SPIRAL, max_refine=1, trim=True, raster_n=81)

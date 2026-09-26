@@ -596,17 +596,70 @@ def find_alpha_min_ladder(f, L, R, eps, d, *, norm="2", tau_max=20.0, n_levels=4
 # --------------------------------------------------------------------------- #
 # Algorithm 2 (Find-alpha-RoA), fused
 # --------------------------------------------------------------------------- #
-def region_distance_map(centers, halfs, R_dom, n_cells):
+def _cells_in_ball(n_cells, d, lo, cellw, radius, norm_key):
+    """Boolean ``n_cells^d`` mask of raster cells lying entirely inside the
+    working-norm ball of ``radius`` about the origin. A cell is inside iff its
+    farthest point from the origin is, and for these norms that point has, per
+    axis, the larger of the two edge magnitudes."""
+    edges = lo + cellw * np.arange(n_cells + 1)
+    far = np.maximum(np.abs(edges[:-1]), np.abs(edges[1:]))    # (n_cells,)
+    axes = [far.reshape((-1,) + (1,) * (d - 1 - j)) for j in range(d)]
+    if norm_key == "inf":
+        val = axes[0]
+        for a in axes[1:]:
+            val = np.maximum(val, a)
+    elif norm_key == "2":
+        val = axes[0] ** 2
+        for a in axes[1:]:
+            val = val + a ** 2
+        val = np.sqrt(val)
+    else:
+        val = axes[0]
+        for a in axes[1:]:
+            val = val + a
+    return np.broadcast_to(val, (n_cells,) * d) <= radius
+
+
+def _snap_to_grid(centers, halfs, R_dom):
+    """Return float64 copies of cubes from the layered grid (and its splits)
+    with their exact geometry restored: half-widths ``R_dom / 3^j`` and
+    centers at integer multiples of ``2h``. Certified cubes are stored in
+    float32, which leaves gaps and overlaps of relative size ~1e-7 between
+    neighbours; rasterizing those makes fully covered cells look partial (or
+    the reverse). Cubes that are not within float32 rounding of such a
+    lattice position are returned unchanged."""
+    C = np.asarray(centers, dtype=np.float64)
+    H = np.asarray(halfs, dtype=np.float64)
+    if not len(H):
+        return C, H
+    tol = 64.0 * np.finfo(np.float32).eps
+    j = np.round(np.log(R_dom / H) / np.log(3.0))
+    Hs = R_dom / 3.0 ** j
+    Cs = np.round(C / (2.0 * Hs[:, None])) * (2.0 * Hs[:, None])
+    ok = (np.abs(Hs - H) <= tol * H) & np.all(
+        np.abs(Cs - C) <= tol * np.maximum(np.abs(C), R_dom), axis=1)
+    return np.where(ok[:, None], Cs, C), np.where(ok, Hs, H)
+
+
+def region_distance_map(centers, halfs, R_dom, n_cells, ball=None):
     r"""Rasterize a union of grid-aligned cubes onto an ``n_cells^d`` grid over
     ``[-R_dom, R_dom]^d`` and return the inf-norm INNER distance map: for each
     cell, a sound lower bound on the distance from any point of the cell to the
     complement of the union. Enables the Trim (32b) check ``sd(phi, S) <=
     -r e^{Lt}`` as a single lookup: ``dist(phi) >= r e^{Lt}``.
 
-    Cells only partially covered by the union count as OUTSIDE (conservative
-    under-approximation), and one cell width is subtracted from the transform
-    (point-in-cell quantization), so the map never overstates the distance."""
+    ``ball=(radius, norm)`` adds the working-norm ball ``B_radius`` about the
+    origin to the union (the target ball ``B_eps``, where certified chains of
+    returns end).
+
+    Cubes on the layered grid are first snapped to their exact positions
+    (they arrive rounded to float32). Cells only partially covered by the
+    union count as OUTSIDE (conservative under-approximation), everything
+    beyond ``[-R_dom, R_dom]^d`` counts as outside, and one cell width is
+    subtracted from the transform (point-in-cell quantization), so the map
+    never overstates the distance."""
     from scipy.ndimage import distance_transform_cdt
+    centers, halfs = _snap_to_grid(centers, halfs, R_dom)
     d = centers.shape[1]
     cellw = 2.0 * R_dom / n_cells
     lo = -R_dom
@@ -630,7 +683,7 @@ def region_distance_map(centers, halfs, R_dom, n_cells):
                         out_i.append(j)
             if ix and iy:
                 area[np.ix_(ix, iy)] += np.outer(wxs, wys)
-        grid = area >= 1.0 - 1e-6
+        grid = area >= 1.0 - 1e-9
     else:
         grid = np.zeros((n_cells,) * d, dtype=bool)
         for (cvec, h) in zip(centers, halfs):
@@ -643,8 +696,17 @@ def region_distance_map(centers, halfs, R_dom, n_cells):
             sl = tuple(slice(max(a, 0), min(b, n_cells))
                        for a, b in zip(i0, i1))
             grid[sl] = True
-    # chessboard = inf-norm distance in cell units to the nearest outside cell
+    if ball is not None:
+        grid |= _cells_in_ball(n_cells, d, lo, cellw, float(ball[0]),
+                               _norm_key(ball[1]))
+    # chessboard = inf-norm distance in cell units to the nearest outside cell.
+    # The transform does not treat the array edge as background, so pad with
+    # one outside cell per side: without it, cells on the edge of Q_R get the
+    # distance they would have if the region continued past the box, and a
+    # region covering the whole raster gets no finite distances at all.
+    grid = np.pad(grid, 1, constant_values=False)
     dist_cells = distance_transform_cdt(grid, metric="chessboard")
+    dist_cells = dist_cells[(slice(1, -1),) * d]
     dmap = (dist_cells.astype(np.float64) - 1.0) * cellw
     return np.maximum(dmap, 0.0), lo, cellw
 
@@ -741,7 +803,8 @@ class FusedRoAResult:
 
 def find_alpha_roa_fused(f, L, R, eps, d, alpha, *, norm="2", tau=2.0,
                          n_steps=200, max_refine=5, trim_region=None,
-                         raster_n=2187, grid0=None, dtype="float32",
+                         trim_eps_ball=True, raster_n=2187, grid0=None,
+                         dtype="float32",
                          tile_size=100_000, max_seconds=None,
                          plateau_rel=None, verbose=False, backend="jax",
                          spill_dir=None, odd_field_sym=False,
@@ -758,9 +821,13 @@ def find_alpha_roa_fused(f, L, R, eps, d, alpha, *, norm="2", tau=2.0,
 
     ``trim_region=(centers, halfs)`` enables the paper's ``Trim=True`` pass:
     (32b) is checked against the EXACT union of those cubes (rasterized inner
-    distance map at ``raster_n^d``), not a bounding box. Paper usage: pass 1
-    with ``trim_region=None`` grows ``S0``; pass 2 with ``trim_region=S0`` and
-    ``grid0=S0`` prunes it.
+    distance map at ``raster_n^d``), not a bounding box. With
+    ``trim_eps_ball`` (default) the target ball ``B_eps`` also counts as a
+    valid landing zone: a chain of returns that enters ``B_eps`` has reached
+    the target, and without it no nonempty region can pass its own check.
+    A single call checks against the given region, not against its own
+    result; :func:`pyddrv.verify_roa` repeats the pass with ``trim_region``
+    and ``grid0`` set to the previous result until nothing changes.
 
     ``max_seconds`` makes the loop ANYTIME: the budget is checked per TILE, so
     a round larger than the remaining budget stops mid-round -- cubes evaluated
@@ -841,9 +908,9 @@ def find_alpha_roa_fused(f, L, R, eps, d, alpha, *, norm="2", tau=2.0,
         import jax.numpy as jnp
         kernel = _make_jax_roa_kernel(f, key, use_region)
     if use_region:
-        dmap, lo, cellw = region_distance_map(np.asarray(trim_region[0]),
-                                              np.asarray(trim_region[1]),
-                                              R, raster_n)
+        dmap, lo, cellw = region_distance_map(
+            np.asarray(trim_region[0]), np.asarray(trim_region[1]), R,
+            raster_n, ball=(eps, norm) if trim_eps_ball else None)
     else:                       # dummy 1-cell map, unused inside the kernel
         dmap, lo, cellw = np.zeros((1,) * d), -R, 2.0 * R
     dmap_j = jnp.asarray(dmap, jnp.float32) if jnp is not None else None

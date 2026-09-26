@@ -346,7 +346,12 @@ def verify_stability(
 class RoAReport:
     """Result of :func:`verify_roa`: an inner approximation of the region of
     attraction as a union of cubes, with centers ``centers`` and half-widths
-    ``halfs`` in the original coordinates."""
+    ``halfs`` in the original coordinates.
+
+    With ``trim=True`` and ``trim_converged``, every trajectory starting in
+    the region reaches ``B_eps``, and its norm drops by at least
+    ``e^{-alpha t}`` at each return. ``n_tested`` counts the cubes evaluated
+    over all passes."""
 
     alpha: float
     volume: float                   # total volume of the certified union
@@ -361,19 +366,30 @@ class RoAReport:
     discretization_ok: bool
     trim: bool
     stop_reason: str
+    trim_passes: int = 0            # Trim passes run after the first pass
+    trim_converged: bool = False    # last Trim pass changed nothing
     centers: np.ndarray = field(repr=False, default=None)   # (N, d)
     halfs: np.ndarray = field(repr=False, default=None)     # (N,)
     depths: np.ndarray = field(repr=False, default=None)    # split depth
     lipschitz: LipschitzEstimate = field(repr=False, default=None)
     result: FusedRoAResult = field(repr=False, default=None)
     trace: list = field(repr=False, default=None)
+    # (n_certified, volume) after the first pass and after each Trim pass
+    trim_history: list = field(repr=False, default=None)
 
     def summary(self) -> str:
         frac = self.n_certified / self.n_tested if self.n_tested else 0.0
+        if not self.trim:
+            trim = "Trim=False"
+        elif self.trim_converged:
+            trim = f"Trim=True (fixed point after {self.trim_passes} passes)"
+        else:
+            trim = (f"Trim=True (NOT a fixed point after {self.trim_passes} "
+                    f"passes)")
         return (f"verify_roa[alpha={self.alpha:g}, {self.norm}-norm, "
                 f"R={self.R:g}, tau={self.tau:g}]: {self.n_certified} cubes "
                 f"({frac:.1%} of {self.n_tested} tested), volume {self.volume:.4g}"
-                f" | L={self.L:.3g}, Trim={self.trim}, stop={self.stop_reason}")
+                f" | L={self.L:.3g}, {trim}, stop={self.stop_reason}")
 
 
 def verify_roa(
@@ -391,6 +407,7 @@ def verify_roa(
     n_steps: Optional[int] = None,
     max_refine: int = 5,
     trim: bool = False,
+    max_trim_passes: int = 30,
     raster_n: int = 729,
     max_seconds: Optional[float] = None,
     plateau_rel: Optional[float] = None,
@@ -412,11 +429,25 @@ def verify_roa(
 
     trim : bool
         If false, a cube is accepted when the decay condition holds for the
-        whole cube. If true, a second pass also requires that, at the return
-        time, trajectories from the cube lie inside the region found in the
-        first pass. The second pass checks against the first-pass region, not
-        against its own result. The region is rasterized with ``raster_n``
-        cells per axis for this check.
+        whole cube: for some return time ``t <= tau``, every trajectory from
+        the cube has ``e^{alpha t} ||x(t)|| <= ||x(0)||``. If true, the
+        returned region is also closed under these returns: at the return
+        time, trajectories from each cube lie inside the returned region or
+        inside ``B_eps``. Every trajectory from the region then reaches
+        ``B_eps``, and its norm drops by at least ``e^{-alpha t}`` at each
+        return. The first pass is followed by Trim passes, each checking the
+        previous region against itself and dropping or splitting cubes that
+        fail, until a pass changes nothing (``trim_converged``). The region
+        is rasterized with ``raster_n`` cells per axis for this check; the
+        cells must be small compared to ``eps`` (a warning is issued
+        otherwise), because trajectories that end in ``B_eps`` have to land
+        on cells that lie entirely inside it.
+    max_trim_passes : int
+        Upper bound on the number of Trim passes. If it is reached before a
+        pass changes nothing, a warning is issued, ``trim_converged`` is
+        false, and the returned region is not certified against itself.
+    max_seconds : float, optional
+        Time budget for the first pass. The Trim passes run to completion.
     plateau_rel : float, optional
         Stop when the certified volume has grown by less than this fraction
         over the last doubling of the elapsed time, and the volume expected
@@ -474,24 +505,57 @@ def verify_roa(
         plateau_rel=plateau_rel, spill_dir=spill_dir, verbose=verbose,
         **kwargs)
 
-    if trim and res.n_certified:
-        res = find_alpha_roa_fused(
-            f, L_val, R, eps, d, alpha, norm=norm, tau=tau, n_steps=n_steps,
-            max_refine=max_refine, backend=backend, max_seconds=max_seconds,
-            trim_region=(np.asarray(res.centers), np.asarray(res.halfs)),
-            grid0=(np.asarray(res.centers), np.asarray(res.halfs),
-                   np.asarray(res.depths, dtype=int)),
-            raster_n=raster_n, verbose=verbose, **kwargs)
+    def _volume(r):
+        h = np.asarray(r.halfs, dtype=float)
+        return float(np.sum((2.0 * h) ** d)) if h.size else 0.0
+
+    # Trim: repeat the pass against the previous result until a pass changes
+    # nothing, i.e. every cube of the region certifies against the region
+    # itself (plus B_eps) without being split. Regions only shrink from pass
+    # to pass. max_seconds bounds the first pass only.
+    stop_reason = res.stop_reason
+    n_tested = res.n_tested
+    history = [(res.n_certified, _volume(res))]
+    passes, converged = 0, False
+    if trim and 2.0 * R / raster_n > eps / 2.0:
+        warnings.warn(
+            f"verify_roa: raster cells (width {2.0 * R / raster_n:.3g}) are "
+            f"coarse relative to eps={eps:.3g}, so few cells fit inside B_eps "
+            f"and the Trim passes may shrink the region to nothing. Use "
+            f"raster_n >= {int(np.ceil(4.0 * R / eps))}.", stacklevel=2)
+    if trim:
+        while res.n_certified and passes < max_trim_passes:
+            n_in = res.n_certified
+            region = (np.asarray(res.centers), np.asarray(res.halfs))
+            res = find_alpha_roa_fused(
+                f, L_val, R, eps, d, alpha, norm=norm, tau=tau,
+                n_steps=n_steps, max_refine=max_refine, backend=backend,
+                trim_region=region,
+                grid0=region + (np.asarray(res.depths, dtype=int),),
+                raster_n=raster_n, verbose=verbose, **kwargs)
+            passes += 1
+            n_tested += res.n_tested
+            history.append((res.n_certified, _volume(res)))
+            if res.n_tested == n_in and res.n_certified == n_in:
+                converged = True
+                break
+        converged = converged or res.n_certified == 0
+        if not converged:
+            warnings.warn(
+                f"verify_roa: the Trim passes did not reach a fixed point "
+                f"within max_trim_passes={max_trim_passes}; the returned "
+                f"region is not certified against itself.", stacklevel=2)
 
     halfs = np.asarray(res.halfs, dtype=float)
-    volume = float(np.sum((2.0 * halfs) ** d)) if halfs.size else 0.0
+    volume = _volume(res)
     centers = (np.asarray(res.centers, dtype=float) + eq
                if res.n_certified else np.empty((0, d)))
     return RoAReport(
         alpha=float(alpha), volume=volume,
-        n_certified=res.n_certified, n_tested=res.n_tested,
+        n_certified=res.n_certified, n_tested=n_tested,
         equilibrium=eq, norm=norm, R=float(R), eps=eps, tau=float(tau),
         L=L_val, discretization_ok=bool(est.discretization_ok),
-        trim=bool(res.trim), stop_reason=res.stop_reason,
+        trim=bool(trim), stop_reason=stop_reason,
+        trim_passes=passes, trim_converged=converged,
         centers=centers, halfs=halfs, depths=np.asarray(res.depths),
-        lipschitz=est, result=res, trace=res.trace)
+        lipschitz=est, result=res, trace=res.trace, trim_history=history)
