@@ -889,6 +889,7 @@ def find_alpha_roa_fused(f, L, R, eps, d, alpha, *, norm="2", tau=2.0,
     key = _norm_key(norm)
     use_region = trim_region is not None
     use_local = local_jac is not None
+    jnp = None          # bound to jax.numpy only on the JAX path below
     if backend == "torch" and t_kernel_override is not None:
         if use_region:
             raise ValueError("t_kernel_override is single-pass (no trim)")

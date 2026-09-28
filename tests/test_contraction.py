@@ -1,13 +1,16 @@
 r"""Tests for the trajectory-local contraction bound (contraction.py).
 
 T1 linear sanity, T2 property test (separation <= bound), T3 Riccati guard,
-T4 regression (forcing the global-L factor reproduces the old formula).
-All CPU / NumPy, small samples -- safe to run alongside a GPU experiment.
+T4 regression (forcing the global-L factor reproduces the old formula),
+T6 regression (the torch local-bound path of find_alpha_roa_fused runs).
+All CPU / NumPy (T6 needs torch, pinned to the CPU), small samples -- safe to
+run alongside a GPU experiment.
 """
 import numpy as np
 import pytest
 
 from pyddrv.systems import bilinear_2d, bilinear_3d, kuramoto_reduced
+from pyddrv.verification import fused_torch
 from pyddrv.verification.contraction import (
     accumulate_AI,
     alpha_max_local,
@@ -21,6 +24,11 @@ from pyddrv.verification.contraction import (
     matrix_measure_2,
     rollout_with_measure,
 )
+from pyddrv.verification.contraction_torch import (
+    kuramoto_jac_torch,
+    make_local_roa_kernel,
+)
+from pyddrv.verification.fused import find_alpha_roa_fused
 
 _A2 = np.array([[0.0, 2.0], [-1.0, -1.0]])
 _A3 = np.array([[-1.0, 0.0, 0.0], [0.5, -1.0, 0.0], [0.5, 0.5, -1.0]])
@@ -188,3 +196,27 @@ def test_T4_regression_reduces_to_global_L():
                         / np.where(tk > 0, tk, 1.0)[None, :], -np.inf)
     a_old = np.where(valid, rate, -np.inf).max(axis=1)
     assert np.allclose(a_loc, a_old, atol=1e-9, equal_nan=True)
+
+
+# --------------------------------------------------------------------------- #
+# T6 -- regression: the torch local-bound path of find_alpha_roa_fused runs
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("override", [False, True],
+                         ids=["local_jac", "t_kernel_override"])
+def test_T6_fused_roa_torch_local_bound(monkeypatch, override):
+    # v0.1.1 raised UnboundLocalError ('jnp') on both torch paths that skip
+    # the plain torch kernel, before testing a single cube
+    pytest.importorskip("torch")
+    # the kernel goes to torch_device() (mps > cuda > cpu): pin it to the CPU
+    monkeypatch.setattr(fused_torch, "torch_device", lambda: "cpu")
+    k, n = 10.0, 3                                 # d = 2
+    _, L = kuramoto_reduced(k, n)
+    M = jac_lipschitz_numeric(kuramoto_jac_batched(k, n), np.pi, n - 1)
+    f, jac = fused_torch.kuramoto_torch(k, n), kuramoto_jac_torch(k, n)
+    kw = (dict(t_kernel_override=make_local_roa_kernel(f, jac, "2", M))
+          if override else {})
+    res = find_alpha_roa_fused(f, L, np.pi, np.pi / 27, n - 1, 1.0, tau=1.9,
+                               backend="torch", local_jac=jac, local_M=M,
+                               max_refine=2, **kw)
+    assert res.n_tested > 0
+    assert res.n_certified > 0
