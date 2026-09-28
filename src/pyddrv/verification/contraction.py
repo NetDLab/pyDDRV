@@ -126,7 +126,9 @@ def alpha_max_local(ys, A, I, t_grid, r, M, L, x_star=None, norm2=True):
     r"""Per-box certified rate using the trajectory-local ``bound(t)``.
 
     Same shape as the current ``alpha_max`` -- only the inflation term differs.
-    ``ys (N,T,d)``, ``A,I (N,T)``, ``t_grid (T,)``, ``r`` scalar or ``(N,)``.
+    ``ys (N,T,d)``, ``A,I (N,T)``, ``t_grid (T,)``, ``r`` scalar or ``(N,)``:
+    the box radius in the norm of ``V`` (``sqrt(d)*h`` for the 2-norm, ``h``
+    for the max norm, where the 2-norm local term starts from ``sqrt(d)*r``).
     Returns ``(N,)`` (``-inf`` where no valid return time exists).
     """
     ys = np.asarray(ys, dtype=np.float64)
@@ -140,7 +142,9 @@ def alpha_max_local(ys, A, I, t_grid, r, M, L, x_star=None, norm2=True):
     Vphi = nrm(ys - x_star)                                 # (N,T)
     r = np.broadcast_to(np.asarray(r, float), (N,))[:, None]
     tk = np.asarray(t_grid, float)[None, :]                 # (1,T)
-    bnd = local_bound(r, A, I, M, L, np.broadcast_to(tk, (N, T)))
+    tkb = np.broadcast_to(tk, (N, T))
+    r_loc = r if norm2 else np.sqrt(d) * r                  # 2-norm radius
+    bnd = np.minimum(r * np.exp(L * tkb), local_bound(r_loc, A, I, M, L, tkb))
     margin = Vx - r
     denom = Vphi + bnd
     valid = (margin > 0) & (denom > 0) & (tk > 0)

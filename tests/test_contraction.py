@@ -2,9 +2,10 @@ r"""Tests for the trajectory-local contraction bound (contraction.py).
 
 T1 linear sanity, T2 property test (separation <= bound), T3 Riccati guard,
 T4 regression (forcing the global-L factor reproduces the old formula),
-T6 regression (the torch local-bound path of find_alpha_roa_fused runs).
-All CPU / NumPy (T6 needs torch, pinned to the CPU), small samples -- safe to
-run alongside a GPU experiment.
+T6 regression (the torch local-bound path of find_alpha_roa_fused runs),
+T7 soundness in every norm (no rate beats the exact separation's).
+All CPU / NumPy (T6 and T7 need torch, pinned to the CPU), small samples --
+safe to run alongside a GPU experiment.
 """
 import numpy as np
 import pytest
@@ -29,6 +30,7 @@ from pyddrv.verification.contraction_torch import (
     make_local_roa_kernel,
 )
 from pyddrv.verification.fused import find_alpha_roa_fused
+from pyddrv.verification.grid import initial_grid, norm_equiv_c
 
 _A2 = np.array([[0.0, 2.0], [-1.0, -1.0]])
 _A3 = np.array([[-1.0, 0.0, 0.0], [0.5, -1.0, 0.0], [0.5, 0.5, -1.0]])
@@ -220,3 +222,45 @@ def test_T6_fused_roa_torch_local_bound(monkeypatch, override):
                                max_refine=2, **kw)
     assert res.n_tested > 0
     assert res.n_certified > 0
+
+
+# --------------------------------------------------------------------------- #
+# T7 -- soundness in every norm: for x' = Ax the separation over a cube is
+# exactly h * max_vertex ||e^{At} s||, so no sound rate can beat the one it
+# gives.  A decaying rotation (mu_2 = -a, mu_1 = mu_inf = w - a) exposed the
+# max norm reusing r = h as the 2-norm radius of the cube (0.1.1)
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("norm", ["2", "inf", "1"])
+def test_T7_local_rate_never_beats_exact_separation(monkeypatch, norm):
+    torch = pytest.importorskip("torch")
+    monkeypatch.setattr(fused_torch, "torch_device", lambda: "cpu")
+    a, w = 1.0, 10.0
+    A = np.array([[-a, w], [-w, -a]])
+    L = {"2": -a, "inf": w - a, "1": w - a}[norm]  # matrix measure of A
+    nrm = {"2": lambda z: np.linalg.norm(z, axis=-1),
+           "inf": lambda z: np.abs(z).max(axis=-1),
+           "1": lambda z: np.abs(z).sum(axis=-1)}[norm]
+    tau, n = 1.0, 200
+    tk = tau / n * np.arange(n + 1)
+    cs, sn = np.cos(w * tk), np.sin(w * tk)
+    E = np.exp(-a * tk)[:, None, None] * np.stack(
+        [np.stack([cs, sn], -1), np.stack([-sn, cs], -1)], 1)   # e^{A t_k}
+    C, H = initial_grid(1.0, 1.0 / 27, "inf", 2)
+    c = norm_equiv_c(norm, 2)
+    ys = np.einsum("tij,nj->nti", E, C)
+    S = np.array([[1.0, 1.0], [1.0, -1.0], [-1.0, 1.0], [-1.0, -1.0]])
+    sep = H[:, None] * nrm(np.einsum("tij,sj->tsi", E, S)).max(axis=1)
+    marg = nrm(C)[:, None] - c * H[:, None]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        exact = (np.log(marg / (nrm(ys) + sep))[:, 1:] / tk[1:]).max(axis=1)
+    f = lambda X: X @ torch.as_tensor(A.T, dtype=X.dtype)
+    jac = lambda X: torch.as_tensor(A, dtype=X.dtype).expand(len(X), 2, 2)
+    got, _ = make_local_roa_kernel(f, jac, norm, 0.0)(C, H, tau, n, L, c)
+    ok = np.isfinite(got)                          # norm 1: axis cubes have
+    assert ok.any()                                # no margin (-inf)
+    assert (got[ok] <= exact[ok] + 1e-3).all()
+    if norm != "1":                                # NumPy reference (2 / max)
+        At = np.broadcast_to(-a * tk, ys.shape[:2])        # int mu_2 = -a t
+        ref = alpha_max_local(ys, At, np.zeros_like(At), tk, c * H, 0.0, L,
+                              norm2=norm == "2")
+        assert (ref[ok] <= exact[ok] + 1e-3).all()

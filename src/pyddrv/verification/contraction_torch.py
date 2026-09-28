@@ -99,10 +99,15 @@ def make_local_roa_kernel(f_torch, jac_torch, norm_key, M, device=None):
     r"""Fused Theorem-8 RoA kernel with the TRAJECTORY-LOCAL bound.
 
     Like :func:`fused_torch.make_torch_roa_kernel` but the inflation term is
-    ``min(r*exp(L*t), r*exp(A)/(1-r*(M/2)*I))`` with ``A(t)=int mu_2(J)`` and
-    ``I(t)=int exp(A)`` accumulated along the centre trajectory (float32, A
-    clipped at ``L*t``).  Returns ``kernel(centers,halfs,tau,n_steps,L,c) ->
-    (alpha, alpha_lookahead)`` as numpy, matching the reference alpha_max_local.
+    ``min(r*exp(L*t), k*r2*exp(A)/(1-r2*(M/2)*I))`` with ``A(t)=int mu_2(J)``
+    and ``I(t)=int exp(A)`` accumulated along the centre trajectory (float32).
+    The local term bounds the 2-norm separation, so it starts from the cube's
+    2-norm radius ``r2 = sqrt(d)*h`` (``r = c*h`` is only ``h`` in the max
+    norm) and ``k`` (``sqrt(d)`` for the 1-norm, else 1) converts it to the
+    norm of ``V``.  ``A`` is capped where the global bound ``r*exp(L*t)``,
+    read in the 2-norm, takes over.  Returns
+    ``kernel(centers,halfs,tau,n_steps,L,c) -> (alpha, alpha_lookahead)`` as
+    numpy, matching the reference alpha_max_local.
     """
     import torch
     from .fused_torch import torch_device
@@ -126,6 +131,14 @@ def make_local_roa_kernel(f_torch, jac_torch, norm_key, M, device=None):
         h = torch.as_tensor(np.ascontiguousarray(halfs), dtype=torch.float32,
                             device=dev)
         rads = torch.stack([c * h, c * h / 3.0])           # (2,N): r and r/3
+        # 2-norm view of the cube for the mu_2 bound: radius sqrt(d)*h, read
+        # back via ||z|| <= k_out ||z||_2; the global bound caps A through
+        # ||z||_2 <= k_in ||z||.  No-ops for "2", so that path is unchanged
+        sd = float(np.sqrt(x.shape[1]))
+        k_out, k_in = {"2": (1.0, 1.0), "inf": (1.0, sd),
+                       "1": (sd, 1.0)}[norm_key]
+        r2 = torch.stack([sd * h, sd * h / 3.0])
+        A_cap = float(np.log(k_in * c / sd))               # 0 except norm "1"
         dt = tau / n_steps
         Vx = vnorm(x)
         marg = Vx.unsqueeze(0) - rads                      # (2,N)
@@ -141,14 +154,15 @@ def make_local_roa_kernel(f_torch, jac_torch, norm_key, M, device=None):
             tk = dt * k
             a_k = mu2_torch(jac_torch(x))
             A = torch.minimum(A + torch.maximum(a_prev, a_k) * dt,
-                              torch.as_tensor(L * tk, dtype=A.dtype, device=dev))
+                              torch.as_tensor(L * tk + A_cap, dtype=A.dtype,
+                                              device=dev))
             I = I + torch.exp(A) * dt
             a_prev = a_k
             Vphi = vnorm(x).unsqueeze(0)                   # (1,N)
             old = rads * float(np.exp(L * tk))
-            guard = (rads * b_rem * I.unsqueeze(0)) < 1.0
-            denom_g = 1.0 - rads * b_rem * I.unsqueeze(0)
-            rho = torch.where(guard, rads * torch.exp(A).unsqueeze(0)
+            guard = (r2 * b_rem * I.unsqueeze(0)) < 1.0
+            denom_g = 1.0 - r2 * b_rem * I.unsqueeze(0)
+            rho = torch.where(guard, k_out * r2 * torch.exp(A).unsqueeze(0)
                               / denom_g, torch.full_like(old, float("inf")))
             bnd = torch.minimum(old, rho)
             denom = Vphi + bnd
