@@ -3,6 +3,28 @@
 Changes to pyDDRV, by version. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+- `find_alpha_roa_fused(backend="torch")` with `local_jac` or
+  `t_kernel_override` raised `UnboundLocalError` before testing a single cube.
+- The trajectory-local bound (`local_jac`, `local_M`) understated how far
+  trajectories from a cube can separate in the max norm. It bounds the
+  2-norm separation but started from the cube's radius in the working norm,
+  which for `norm="inf"` is `h` rather than the 2-norm radius `sqrt(d)*h`, so
+  at the corners of a cube the separation could exceed it by up to
+  `sqrt(d)`. For Kuramoto (`k = 10`, `n = 3`) separations sampled from cube
+  lattices exceeded the bound by up to 23%, in most cubes; no certified cube
+  was found that violates the decay condition itself. The bound now starts
+  from `sqrt(d)*h` in every norm.
+  - `norm="2"` (the default) is unchanged. For the Kuramoto example the
+    certified area changes by at most 2%: down with `norm="inf"`, slightly
+    up with `norm="1"`.
+  - In the 1-norm the old bound held only until the cap on its growth
+    exponent took effect, because the cap ignored `||z||_2 <= ||z||_1`; the
+    cap is raised to match.
+  - The NumPy reference `alpha_max_local(norm2=False)` had the same mismatch.
+
 ## [0.1.1](https://github.com/NetDLab/pyDDRV/releases/tag/v0.1.1) (2026-09-26)
 
 ### Fixed
