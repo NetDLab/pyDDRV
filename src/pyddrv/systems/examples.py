@@ -157,9 +157,14 @@ def kuramoto_reduced(k=1.0, n=3):
     which removes the rotational symmetry; the synchronized state is ``phi=0``.
 
     ``theta_dot_i = (k/n) sum_j sin(theta_j - theta_i)``. Closed-form one-sided
-    Lipschitz bound (max norm): ``L <= 2 k (n-1) / n`` (each Jacobian row:
-    ``|J_ii| + sum |J_ij| <= (k/n)(n-1) + (k/n)(n-1)``), valid globally -- no
-    numerical estimation required.
+    Lipschitz bound ``L = k (3n-4) / n``, valid globally in the max, 1- and
+    2-norms -- no numerical estimation required. With ``D`` the Jacobian in
+    ``theta``, the reduced Jacobian is ``J_ij = D_ij - D_nj``, so
+    ``J_ii <= (k/n)(n-1) + k/n = k`` and ``|J_ij| <= 2k/n`` off the diagonal.
+    Every row and every column of ``J`` then gives at most
+    ``k + 2k(n-2)/n``, which bounds the max- and 1-norm measures, and
+    ``mu_2(J) <= (mu_1(J) + mu_inf(J)) / 2``. The max-norm bound is attained
+    at ``phi = (pi, 0, ..., 0)``.
 
     Returns ``(f, L_bound)`` with ``f`` batched ``(N, n-1) -> (N, n-1)``.
     """
@@ -172,4 +177,4 @@ def kuramoto_reduced(k=1.0, n=3):
         dtheta = (k / n) * np.sin(diff).sum(axis=2)                   # (N, n)
         return dtheta[:, :n - 1] - dtheta[:, n - 1:n]
 
-    return f, 2.0 * k * (n - 1) / n
+    return f, k * (3 * n - 4) / n

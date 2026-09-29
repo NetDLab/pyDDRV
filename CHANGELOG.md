@@ -24,6 +24,16 @@ Changes to pyDDRV, by version. Versions follow
     exponent took effect, because the cap ignored `||z||_2 <= ||z||_1`; the
     cap is raised to match.
   - The NumPy reference `alpha_max_local(norm2=False)` had the same mismatch.
+- `kuramoto_reduced` and `kuramoto_reduced_jax` returned `2k(n-1)/n` as a
+  one-sided Lipschitz bound in the max norm. That row-sum bound holds for the
+  Jacobian in the phases, not in the reduced coordinates, where each row also
+  picks up the reference oscillator's row: at `phi = (pi, 0, ..., 0)` the
+  max-norm measure is `k(3n-4)/n`, 16.7 instead of 13.3 for three
+  oscillators. Both now return `k(3n-4)/n`, which bounds the measure in the
+  max, 1- and 2-norms (2-norm runs that used this bound get a larger `L`).
+  The certified fraction of the box drops from 82.2% to 81.2% for three
+  oscillators (`examples/kuramoto_roa.py`, notebook 03) and from 65.9% to
+  62.4% for four (`examples/kuramoto_roa_3d.py`, notebook 04, first pass).
 
 ## [0.1.1](https://github.com/NetDLab/pyDDRV/releases/tag/v0.1.1) (2026-09-26)
 

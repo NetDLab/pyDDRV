@@ -14,7 +14,8 @@ from pyddrv.lipschitz import (
     one_sided_lipschitz,
     one_sided_lipschitz_from_data,
 )
-from pyddrv.systems import bilinear_2d, linear, sample_linear
+from pyddrv.systems import bilinear_2d, kuramoto_reduced, linear, sample_linear
+from pyddrv.verification.contraction import kuramoto_jac_batched
 
 A_SPIRAL = np.array([[0.0, 1.0], [-1.0, -0.5]])
 
@@ -101,3 +102,28 @@ def test_derivatives_from_trajectories_shape_and_value():
     # finite-difference derivative should approximate A x along the data
     err = np.linalg.norm(F - X @ A_SPIRAL.T, axis=1)
     assert np.median(err) < 0.05
+
+
+@pytest.mark.parametrize("n", [3, 4, 5, 6, 7])
+def test_kuramoto_closed_form_L_bounds_every_measure(n):
+    # The closed-form L of kuramoto_reduced bounds the measure of the reduced
+    # Jacobian in the max, 1- and 2-norms, and the max-norm measure reaches it
+    # at phi = (pi, 0, ..., 0). 0.1.1 returned 2k(n-1)/n, below that peak.
+    k = 10.0
+    _, L = kuramoto_reduced(k=k, n=n)
+    jac = kuramoto_jac_batched(k, n)
+    X = np.random.default_rng(0).uniform(-np.pi, np.pi, (1000, n - 1))
+    for J in jac(X):
+        for norm in ("inf", "1", "2"):
+            assert matrix_measure(J, norm) <= L + 1e-9
+    peak = np.zeros((1, n - 1))
+    peak[0, 0] = np.pi
+    assert matrix_measure(jac(peak)[0], "inf") == pytest.approx(L)
+
+
+def test_kuramoto_jax_mirror_returns_the_same_L():
+    pytest.importorskip("jax")
+    from pyddrv.systems.fields_jax import kuramoto_reduced_jax
+    for n in (3, 4):
+        _, L_jax = kuramoto_reduced_jax(k=10.0, n=n)
+        assert L_jax == kuramoto_reduced(k=10.0, n=n)[1]

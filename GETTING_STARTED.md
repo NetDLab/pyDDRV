@@ -56,8 +56,8 @@ percent. Times were measured on a laptop CPU.
 |---|---|---|---|
 | `pendulum_stability.py` | damped pendulum, `R = 0.8` | rate ≥ 0.388 | 5 s |
 | `bilinear2d_stability.py` | bilinear benchmark of the paper, `R = 0.7` | rate ≥ 0.474 | 2 s |
-| `kuramoto_roa.py` | 3 Kuramoto oscillators, rate 1 | 82% of the box | 10 s |
-| `kuramoto_roa_3d.py` | 4 Kuramoto oscillators, rate 1 | 66% of the box (first pass only) | 40 s |
+| `kuramoto_roa.py` | 3 Kuramoto oscillators, rate 1 | 81% of the box | 10 s |
+| `kuramoto_roa_3d.py` | 4 Kuramoto oscillators, rate 1 | 62% of the box (first pass only) | 40 s |
 
 The pendulum example uses the NumPy kernel, the others the JAX kernel. The
 same four examples are available as notebooks in `examples/notebooks/`, with

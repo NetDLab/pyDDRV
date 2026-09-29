@@ -48,8 +48,8 @@ def bilinear_2d_jax(eta=0.3, B1=None, seed=0):
 def kuramoto_reduced_jax(k=1.0, n=3):
     """JAX mirror of :func:`pyddrv.systems.kuramoto_reduced` in the O(n) form
     ``sum_j sin(th_j - th_i) = cos(th_i) S - sin(th_i) C``. Returns
-    ``(f_jax, L_bound)`` with the global closed-form max-norm one-sided
-    Lipschitz bound ``2 k (n-1) / n``."""
+    ``(f_jax, L_bound)`` with the same closed-form one-sided Lipschitz bound
+    ``k (3n-4) / n``, valid globally in the max, 1- and 2-norms."""
     import jax.numpy as jnp
     kk, n = float(k), int(n)
 
@@ -61,4 +61,4 @@ def kuramoto_reduced_jax(k=1.0, n=3):
         dtheta = (kk / n) * (co * S - s * C)
         return dtheta[:, : n - 1] - dtheta[:, n - 1 : n]
 
-    return f, 2.0 * kk * (n - 1) / n
+    return f, kk * (3 * n - 4) / n
